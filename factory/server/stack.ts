@@ -144,7 +144,8 @@ export function buildPrGroups(
       merge: mergeStatus(pr),
       depth,
       builtOn: parent && parent.headRefName !== pr.baseRefName ? parent.number : null,
-      resolver: null,
+      threads: 0,
+      task: null,
     };
     const below = children.get(pr.number) ?? [];
     return [node, ...below.flatMap((child) => walk(child, depth + 1, pr))];

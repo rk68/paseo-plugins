@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Check, Pr } from "./pr-stack";
-import { byUrgency, prSignals } from "./pr-signals";
+import { byUrgency, prActions, prSignals } from "./pr-signals";
 
 function pr(extra: Partial<Pr> = {}): Pr {
   return {
@@ -16,13 +16,20 @@ function pr(extra: Partial<Pr> = {}): Pr {
     merge: "ready",
     depth: 0,
     builtOn: null,
-    resolver: null,
+    threads: 0,
+    task: null,
     ...extra,
   };
 }
 
 const check = (name: string, state: Check["state"]): Check => ({ name, state, url: null });
 const labels = (value: Pr) => prSignals(value).map((s) => `${s.tone}:${s.label}`);
+const task = (kind: "conflicts" | "ci" | "comments", status: string) => ({
+  kind,
+  agentId: "a",
+  workspaceId: "w",
+  status,
+});
 
 describe("prSignals", () => {
   it("orders blockers by urgency and names failing checks once", () => {
@@ -32,10 +39,16 @@ describe("prSignals", () => {
           merge: "behind",
           ci: "fail",
           review: "review_required",
+          threads: 2,
           checks: [check("lint", "fail"), check("lint", "fail"), check("test", "pass")],
         }),
       ),
-    ).toEqual(["danger:CI failing: lint", "warning:Needs update", "muted:Review required"]);
+    ).toEqual([
+      "danger:CI failing: lint",
+      "warning:2 unresolved comments",
+      "warning:Needs update",
+      "muted:Review required",
+    ]);
   });
 
   it("caps the named failing checks", () => {
@@ -57,10 +70,15 @@ describe("prSignals", () => {
     ]);
   });
 
-  it("shows a running resolver instead of the raw conflict", () => {
-    const resolver = { agentId: "a", workspaceId: "w", status: "running" };
-    expect(labels(pr({ merge: "conflicts", resolver }))).toEqual(["warning:Resolving conflicts"]);
-    expect(labels(pr({ merge: "conflicts", resolver: { ...resolver, status: "idle" } }))).toEqual([
+  it("leads with a running task and drops the problem it is fixing", () => {
+    const value = pr({ merge: "conflicts", ci: "fail", task: task("conflicts", "running") });
+    expect(prSignals(value)[0]).toEqual({
+      tone: "warning",
+      label: "Resolving conflicts",
+      busy: true,
+    });
+    expect(labels(value)).not.toContain("danger:Conflicts");
+    expect(labels(pr({ merge: "conflicts", task: task("conflicts", "idle") }))).toEqual([
       "danger:Conflicts",
     ]);
   });
@@ -69,6 +87,21 @@ describe("prSignals", () => {
     expect(labels(pr({ builtOn: 101, merge: "unknown" }))).toEqual([
       "warning:Built on #101, targets main",
     ]);
+  });
+});
+
+describe("prActions", () => {
+  it("offers one click for each problem a PR has", () => {
+    expect(
+      prActions(pr({ merge: "behind", ci: "fail", review: "changes_requested", threads: 0 })),
+    ).toEqual(["update", "ci", "comments"]);
+    expect(prActions(pr({ merge: "conflicts", threads: 3 }))).toEqual(["conflicts", "comments"]);
+    expect(prActions(pr({ ci: "pass" }))).toEqual([]);
+  });
+
+  it("offers only the agent while a task runs, and the agent after it ends", () => {
+    expect(prActions(pr({ merge: "behind", task: task("ci", "running") }))).toEqual(["open-agent"]);
+    expect(prActions(pr({ ci: "fail", task: task("ci", "idle") }))).toEqual(["ci", "open-agent"]);
   });
 });
 

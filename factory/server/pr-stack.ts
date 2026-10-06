@@ -3,7 +3,8 @@ import type { RpcInput } from "@getpaseo/plugin";
 import type { PrStack, prStackRpc } from "../shared/pr-stack";
 import { gh, repoInfo } from "./gh";
 import { findGitParents } from "./git-stack";
-import { findResolvers, resolverKey } from "./resolver";
+import { findTasks, taskKey } from "./tasks";
+import { unresolvedThreads } from "./threads";
 import { buildPrGroups, type GhPr } from "./stack";
 
 type PaseoApi = PluginHandlerContext["paseo"];
@@ -47,16 +48,30 @@ export async function listPrStack(
     repoInfo(directory),
     listOpenPrs(directory),
   ]);
-  const [{ parents, warning }, resolvers] = await Promise.all([
+  const warnings: string[] = [];
+  const [{ parents, warning }, tasks, threads] = await Promise.all([
     findGitParents(directory, prs, trunk),
-    findResolvers(paseo, nameWithOwner),
+    findTasks(paseo, nameWithOwner),
+    unresolvedThreads(directory, nameWithOwner).catch((error: unknown) => {
+      warnings.push(
+        `Review comments unavailable: ${error instanceof Error ? error.message : error}`,
+      );
+      return new Map<number, number>();
+    }),
   ]);
+  if (warning) warnings.push(warning);
   const groups = buildPrGroups(prs, trunk, parents);
   for (const pr of groups.flatMap((group) => group.prs)) {
-    const resolver = resolvers.get(resolverKey(nameWithOwner, pr.number));
-    pr.resolver = resolver
-      ? { agentId: resolver.agentId, workspaceId: resolver.workspaceId, status: resolver.status }
+    pr.threads = threads.get(pr.number) ?? 0;
+    const [latest] = tasks.get(taskKey(nameWithOwner, pr.number)) ?? [];
+    pr.task = latest
+      ? {
+          kind: latest.kind,
+          agentId: latest.agentId,
+          workspaceId: latest.workspaceId,
+          status: latest.status,
+        }
       : null;
   }
-  return { trunk, groups, warnings: warning ? [warning] : [] };
+  return { trunk, groups, warnings };
 }

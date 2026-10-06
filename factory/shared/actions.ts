@@ -1,15 +1,39 @@
 import { defineRpc, defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
 
+export const TASK_KINDS = ["conflicts", "ci", "comments"] as const;
+export type TaskKind = (typeof TASK_KINDS)[number];
+
+const PerTask = <Value extends z.ZodType>(value: Value) =>
+  z.object({ conflicts: value, ci: value, comments: value });
+
+const AutomationSchema = PerTask(z.boolean().default(false));
+
 export const factorySettings = defineSettings({
   id: "factory",
   scope: "host",
-  version: 1,
+  version: 2,
   schema: z.object({
-    /** Workspace directories whose conflicting PRs get a resolver agent without a click. */
-    autoResolveDirectories: z.array(z.string()).default([]),
+    /** Automatic tasks per workspace directory. */
+    automation: z.record(z.string(), AutomationSchema).default({}),
+    /** Extra instructions appended to each task's agent briefing. */
+    prompts: PerTask(z.string().default("")).default({ conflicts: "", ci: "", comments: "" }),
+    /** Failing checks with these names never start an automatic CI fix. */
+    ignoredChecks: z.array(z.string()).default([]),
   }),
+  migrate(values, fromVersion) {
+    if (fromVersion !== 1) return values;
+    const { autoResolveDirectories = [] } = values as { autoResolveDirectories?: string[] };
+    return {
+      automation: Object.fromEntries(
+        autoResolveDirectories.map((dir) => [dir, { conflicts: true, ci: false, comments: false }]),
+      ),
+    };
+  },
 });
+
+export type Automation = z.infer<typeof AutomationSchema>;
+export const NO_AUTOMATION: Automation = { conflicts: false, ci: false, comments: false };
 
 const PrTargetSchema = z.object({ directory: z.string(), number: z.number().int().positive() });
 
@@ -19,8 +43,8 @@ export const updateBranchRpc = defineRpc({
   output: z.object({ message: z.string() }),
 });
 
-export const resolveConflictsRpc = defineRpc({
-  name: "factory.pr.resolve-conflicts",
-  input: PrTargetSchema,
+export const startTaskRpc = defineRpc({
+  name: "factory.pr.start-task",
+  input: PrTargetSchema.extend({ kind: z.enum(TASK_KINDS) }),
   output: z.object({ agentId: z.string(), workspaceId: z.string(), reused: z.boolean() }),
 });

@@ -12,7 +12,8 @@ import { Pressable, Text, View } from "react-native";
 import { byUrgency, checkCounts, prSignals, prTone, type Tone } from "../shared/pr-signals";
 import { type Check, type Pr, type PrGroup, prStackRpc } from "../shared/pr-stack";
 import { type PanelContextValue, PanelProvider, usePanel } from "./panel-context";
-import { AutoResolveToggle, PrActions } from "./pr-actions";
+import { AutomationView } from "./automation-view";
+import { QuickActions } from "./quick-actions";
 import { Spinner } from "./spinner";
 import { createStyles, toneColor } from "./styles";
 
@@ -50,6 +51,9 @@ export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspace
     (number: number) => setExpanded((current) => (current === number ? null : number)),
     [],
   );
+  const [view, setView] = useState<"list" | "automation">("list");
+  const showAutomation = useCallback(() => setView("automation"), []);
+  const showList = useCallback(() => setView("list"), []);
   const styles = useMemo(() => createStyles(theme), [theme]);
   const navigateToAgent = navigation?.openAgent;
   const panel = useMemo<PanelContextValue>(
@@ -70,39 +74,54 @@ export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspace
   return (
     <PanelProvider value={panel}>
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.headerText} numberOfLines={1}>
-            {headerText}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Refresh pull requests"
-            onPress={refresh}
-            disabled={query.isFetching}
-            style={query.isFetching ? styles.iconButtonBusy : styles.iconButton}
-          >
-            <Icon name="RefreshCw" size={14} color={theme.colors.foregroundMuted} />
-          </Pressable>
-        </View>
-        {directory ? <AutoResolveToggle /> : null}
-        {query.error ? <Text style={styles.errorBlock}>{query.error.message}</Text> : null}
-        {query.data?.warnings.map((warning) => (
-          <Text key={warning} style={styles.notice}>
-            {warning}
-          </Text>
-        ))}
-        {query.data?.groups.length === 0 ? (
-          <Text style={styles.empty}>No open pull requests</Text>
+        {view === "automation" ? <AutomationView onBack={showList} /> : null}
+        {view === "list" ? (
+          <>
+            <View style={styles.header}>
+              <Text style={styles.headerText} numberOfLines={1}>
+                {headerText}
+              </Text>
+              <View style={styles.headerActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Automation settings"
+                  onPress={showAutomation}
+                  disabled={!directory}
+                  style={styles.iconButton}
+                >
+                  <Icon name="Settings" size={14} color={theme.colors.foregroundMuted} />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Refresh pull requests"
+                  onPress={refresh}
+                  disabled={query.isFetching}
+                  style={query.isFetching ? styles.iconButtonBusy : styles.iconButton}
+                >
+                  <Icon name="RefreshCw" size={14} color={theme.colors.foregroundMuted} />
+                </Pressable>
+              </View>
+            </View>
+            {query.error ? <Text style={styles.errorBlock}>{query.error.message}</Text> : null}
+            {query.data?.warnings.map((warning) => (
+              <Text key={warning} style={styles.notice}>
+                {warning}
+              </Text>
+            ))}
+            {query.data?.groups.length === 0 ? (
+              <Text style={styles.empty}>No open pull requests</Text>
+            ) : null}
+            {query.data?.groups.map((group) => (
+              <Group
+                key={`${group.kind}-${group.prs[0]?.number}`}
+                group={group}
+                trunk={query.data.trunk}
+                expanded={expanded}
+                onToggle={toggle}
+              />
+            ))}
+          </>
         ) : null}
-        {query.data?.groups.map((group) => (
-          <Group
-            key={`${group.kind}-${group.prs[0]?.number}`}
-            group={group}
-            trunk={query.data.trunk}
-            expanded={expanded}
-            onToggle={toggle}
-          />
-        ))}
       </ScrollView>
     </PanelProvider>
   );
@@ -224,6 +243,8 @@ function PrRow({
             color={theme.colors.foregroundMuted}
           />
         </Pressable>
+        {/* Outside the row button: web cannot nest buttons. */}
+        <QuickActions pr={pr} />
         {open ? <PrDetails pr={pr} retargetTo={retargetTo} /> : null}
       </View>
     </View>
@@ -263,7 +284,6 @@ function PrDetails({ pr, retargetTo }: { pr: Pr; retargetTo: string | null }) {
           <Icon name="Copy" size={12} color={theme.colors.foregroundMuted} />
         </Pressable>
       ) : null}
-      <PrActions pr={pr} />
       <ExternalLink href={pr.url}>Open on GitHub</ExternalLink>
     </View>
   );

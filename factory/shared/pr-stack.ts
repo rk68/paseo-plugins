@@ -1,5 +1,6 @@
 import { defineRpc, type RpcOutput } from "@getpaseo/plugin";
 import { z } from "zod";
+import { TASK_KINDS } from "./actions";
 
 const CheckSchema = z.object({
   name: z.string(),
@@ -21,8 +22,16 @@ const PrSchema = z.object({
   depth: z.number(),
   /** Set when the branch is built on this PR's branch, but the PR targets another base. */
   builtOn: z.number().nullable(),
-  resolver: z
-    .object({ agentId: z.string(), workspaceId: z.string(), status: z.string() })
+  /** Unresolved review threads that are not outdated. */
+  threads: z.number(),
+  /** The newest agent task for this PR, running or finished. */
+  task: z
+    .object({
+      kind: z.enum(TASK_KINDS),
+      agentId: z.string(),
+      workspaceId: z.string(),
+      status: z.string(),
+    })
     .nullable(),
 });
 

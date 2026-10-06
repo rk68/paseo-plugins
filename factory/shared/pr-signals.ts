@@ -1,3 +1,4 @@
+import type { TaskKind } from "./actions";
 import type { Pr } from "./pr-stack";
 
 export type Tone = "danger" | "warning" | "success" | "muted";
@@ -5,23 +6,30 @@ export type Tone = "danger" | "warning" | "success" | "muted";
 export interface PrSignal {
   tone: Tone;
   label: string;
-  /** Work is in progress, such as a resolver agent; the row shows a spinner. */
+  /** Work is in progress, such as an agent task; the row shows a spinner. */
   busy?: boolean;
 }
 
+export type PrAction = "update" | TaskKind | "open-agent";
+
 const TONE_RANK: Record<Tone, number> = { danger: 0, warning: 1, success: 2, muted: 3 };
 const MAX_NAMED_CHECKS = 2;
+const ACTIVE_TASK_STATUSES = new Set(["initializing", "running"]);
+
+export const TASK_RUNNING_LABEL: Record<TaskKind, string> = {
+  conflicts: "Resolving conflicts",
+  ci: "Fixing CI",
+  comments: "Addressing comments",
+};
+
+export function activeTask(pr: Pr): TaskKind | null {
+  return pr.task && ACTIVE_TASK_STATUSES.has(pr.task.status) ? pr.task.kind : null;
+}
 
 function failingChecks(pr: Pr): string {
   const names = [...new Set(pr.checks.filter((c) => c.state === "fail").map((c) => c.name))];
   const shown = names.slice(0, MAX_NAMED_CHECKS).join(", ");
   return names.length > MAX_NAMED_CHECKS ? `${shown} +${names.length - MAX_NAMED_CHECKS}` : shown;
-}
-
-const ACTIVE_RESOLVER_STATUSES = new Set(["initializing", "running"]);
-
-export function isResolving(pr: Pr): boolean {
-  return pr.resolver !== null && ACTIVE_RESOLVER_STATUSES.has(pr.resolver.status);
 }
 
 export function checkCounts(pr: Pr) {
@@ -34,19 +42,26 @@ export function checkCounts(pr: Pr) {
   };
 }
 
+export function commentsLabel(count: number): string {
+  return count === 1 ? "1 unresolved comment" : `${count} unresolved comments`;
+}
+
 /** What stands between this PR and a merge, most urgent first. Empty when nothing is known. */
 export function prSignals(pr: Pr): PrSignal[] {
+  const task = activeTask(pr);
   const signals: PrSignal[] = [];
-  if (pr.merge === "conflicts") {
-    signals.push(
-      isResolving(pr)
-        ? { tone: "warning", label: "Resolving conflicts", busy: true }
-        : { tone: "danger", label: "Conflicts" },
-    );
+  if (task) signals.push({ tone: "warning", label: TASK_RUNNING_LABEL[task], busy: true });
+  if (pr.merge === "conflicts" && task !== "conflicts") {
+    signals.push({ tone: "danger", label: "Conflicts" });
   }
-  if (pr.ci === "fail") signals.push({ tone: "danger", label: `CI failing: ${failingChecks(pr)}` });
-  if (pr.review === "changes_requested") {
+  if (pr.ci === "fail" && task !== "ci") {
+    signals.push({ tone: "danger", label: `CI failing: ${failingChecks(pr)}` });
+  }
+  if (pr.review === "changes_requested" && task !== "comments") {
     signals.push({ tone: "danger", label: "Changes requested" });
+  }
+  if (pr.threads > 0 && task !== "comments") {
+    signals.push({ tone: "warning", label: commentsLabel(pr.threads) });
   }
   if (pr.builtOn !== null) {
     signals.push({ tone: "warning", label: `Built on #${pr.builtOn}, targets ${pr.base}` });
@@ -65,6 +80,21 @@ export function prSignals(pr: Pr): PrSignal[] {
     signals.unshift({ tone: "success", label: "Ready to merge" });
   }
   return signals;
+}
+
+/**
+ * The one-click actions a PR row offers. While an agent works on the PR, only its agent is
+ * offered: a second task or a branch update would race its push.
+ */
+export function prActions(pr: Pr): PrAction[] {
+  if (activeTask(pr)) return ["open-agent"];
+  const actions: PrAction[] = [];
+  if (pr.merge === "behind") actions.push("update");
+  if (pr.merge === "conflicts") actions.push("conflicts");
+  if (pr.ci === "fail") actions.push("ci");
+  if (pr.threads > 0 || pr.review === "changes_requested") actions.push("comments");
+  if (pr.task) actions.push("open-agent");
+  return actions;
 }
 
 export function prTone(pr: Pr): Tone {
