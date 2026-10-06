@@ -1,0 +1,6 @@
+{
+  "id": "factory",
+  "requirements": {
+    "paseo": ">=0.9.1"
+  }
+}

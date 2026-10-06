@@ -1,0 +1,19 @@
+{
+  "name": "paseo-plugins",
+  "private": true,
+  "description": "Paseo plugins: a PR stack panel and a Slurm cluster panel",
+  "license": "MIT",
+  "scripts": {
+    "setup": "npm ci --prefix factory && npm ci --prefix lab",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint",
+    "typecheck": "npm run typecheck --prefix factory && npm run typecheck --prefix lab",
+    "test": "npm test --prefix factory && npm test --prefix lab",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "oxfmt": "0.46.0",
+    "oxlint": "1.61.0"
+  }
+}
