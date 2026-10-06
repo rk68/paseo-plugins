@@ -22,6 +22,8 @@ const PrSchema = z.object({
   depth: z.number(),
   /** Set when the branch is built on this PR's branch, but the PR targets another base. */
   builtOn: z.number().nullable(),
+  /** Path of the local worktree that has the PR branch checked out. */
+  worktree: z.string().nullable(),
   /** Unresolved review threads that are not outdated. */
   threads: z.number(),
   /** The newest agent task for this PR, running or finished. */

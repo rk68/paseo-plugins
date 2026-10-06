@@ -16,6 +16,7 @@ function pr(extra: Partial<Pr> = {}): Pr {
     merge: "ready",
     depth: 0,
     builtOn: null,
+    worktree: null,
     threads: 0,
     task: null,
     ...extra,
@@ -94,14 +95,22 @@ describe("prActions", () => {
   it("offers one click for each problem a PR has", () => {
     expect(
       prActions(pr({ merge: "behind", ci: "fail", review: "changes_requested", threads: 0 })),
-    ).toEqual(["update", "ci", "comments"]);
-    expect(prActions(pr({ merge: "conflicts", threads: 3 }))).toEqual(["conflicts", "comments"]);
-    expect(prActions(pr({ ci: "pass" }))).toEqual([]);
+    ).toEqual(["update", "ci", "comments", "checkout"]);
+    expect(prActions(pr({ merge: "conflicts", threads: 3 }))).toEqual([
+      "conflicts",
+      "comments",
+      "checkout",
+    ]);
+    expect(prActions(pr({ ci: "pass" }))).toEqual(["checkout"]);
   });
 
   it("offers only the agent while a task runs, and the agent after it ends", () => {
     expect(prActions(pr({ merge: "behind", task: task("ci", "running") }))).toEqual(["open-agent"]);
-    expect(prActions(pr({ ci: "fail", task: task("ci", "idle") }))).toEqual(["ci", "open-agent"]);
+    expect(prActions(pr({ ci: "fail", task: task("ci", "idle") }))).toEqual([
+      "ci",
+      "checkout",
+      "open-agent",
+    ]);
   });
 });
 

@@ -43,6 +43,12 @@ export const updateBranchRpc = defineRpc({
   output: z.object({ message: z.string() }),
 });
 
+export const openBranchRpc = defineRpc({
+  name: "factory.pr.open-branch",
+  input: PrTargetSchema,
+  output: z.object({ workspaceId: z.string(), created: z.boolean() }),
+});
+
 export const startTaskRpc = defineRpc({
   name: "factory.pr.start-task",
   input: PrTargetSchema.extend({ kind: z.enum(TASK_KINDS) }),

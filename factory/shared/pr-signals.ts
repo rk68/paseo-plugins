@@ -10,7 +10,7 @@ export interface PrSignal {
   busy?: boolean;
 }
 
-export type PrAction = "update" | TaskKind | "open-agent";
+export type PrAction = "update" | TaskKind | "checkout" | "open-agent";
 
 const TONE_RANK: Record<Tone, number> = { danger: 0, warning: 1, success: 2, muted: 3 };
 const MAX_NAMED_CHECKS = 2;
@@ -84,7 +84,7 @@ export function prSignals(pr: Pr): PrSignal[] {
 
 /**
  * The one-click actions a PR row offers. While an agent works on the PR, only its agent is
- * offered: a second task or a branch update would race its push.
+ * offered: a second task, a branch update or local edits would race its push.
  */
 export function prActions(pr: Pr): PrAction[] {
   if (activeTask(pr)) return ["open-agent"];
@@ -93,6 +93,7 @@ export function prActions(pr: Pr): PrAction[] {
   if (pr.merge === "conflicts") actions.push("conflicts");
   if (pr.ci === "fail") actions.push("ci");
   if (pr.threads > 0 || pr.review === "changes_requested") actions.push("comments");
+  actions.push("checkout");
   if (pr.task) actions.push("open-agent");
   return actions;
 }

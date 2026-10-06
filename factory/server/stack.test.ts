@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parseWorktrees } from "./worktrees";
 import {
   buildPrGroups,
   ciStatus,
@@ -157,5 +158,28 @@ describe("checks", () => {
     [[{ status: "IN_PROGRESS", conclusion: null }, { state: "ERROR" }], "fail"],
   ])("%j -> %s", (rollup, expected) => {
     expect(ciStatus(toChecks(rollup))).toBe(expected);
+  });
+});
+
+describe("parseWorktrees", () => {
+  it("maps checked-out branches to paths and skips detached worktrees", () => {
+    const porcelain = [
+      "worktree /repo",
+      "HEAD aaa",
+      "branch refs/heads/main",
+      "",
+      "worktree /wt/feat",
+      "HEAD bbb",
+      "branch refs/heads/feat/x",
+      "",
+      "worktree /wt/detached",
+      "HEAD ccc",
+      "detached",
+      "",
+    ].join("\n");
+    expect([...parseWorktrees(porcelain)]).toEqual([
+      ["main", "/repo"],
+      ["feat/x", "/wt/feat"],
+    ]);
   });
 });

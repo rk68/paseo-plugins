@@ -1,8 +1,9 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { startTaskFromPanel, updateBranch } from "./server/actions";
 import { createAutomation } from "./server/automation";
+import { openBranch } from "./server/open-branch";
 import { listPrStack } from "./server/pr-stack";
-import { factorySettings, startTaskRpc, updateBranchRpc } from "./shared/actions";
+import { factorySettings, openBranchRpc, startTaskRpc, updateBranchRpc } from "./shared/actions";
 import { prStackRpc } from "./shared/pr-stack";
 
 export default function contribute(server: PluginServerContext) {
@@ -14,6 +15,7 @@ export default function contribute(server: PluginServerContext) {
     return listPrStack(input, paseo);
   });
   server.handle(updateBranchRpc, updateBranch);
+  server.handle(openBranchRpc, (input, { paseo }) => openBranch(input, paseo));
   server.handle(startTaskRpc, (input, { paseo }) => startTaskFromPanel(input, paseo, settings));
   return () => automation.stop();
 }

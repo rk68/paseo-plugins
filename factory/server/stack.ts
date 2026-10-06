@@ -144,6 +144,7 @@ export function buildPrGroups(
       merge: mergeStatus(pr),
       depth,
       builtOn: parent && parent.headRefName !== pr.baseRefName ? parent.number : null,
+      worktree: null,
       threads: 0,
       task: null,
     };

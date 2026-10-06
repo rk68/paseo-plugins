@@ -5,6 +5,7 @@ import { gh, repoInfo } from "./gh";
 import { findGitParents } from "./git-stack";
 import { findTasks, taskKey } from "./tasks";
 import { unresolvedThreads } from "./threads";
+import { listWorktrees } from "./worktrees";
 import { buildPrGroups, type GhPr } from "./stack";
 
 type PaseoApi = PluginHandlerContext["paseo"];
@@ -49,7 +50,7 @@ export async function listPrStack(
     listOpenPrs(directory),
   ]);
   const warnings: string[] = [];
-  const [{ parents, warning }, tasks, threads] = await Promise.all([
+  const [{ parents, warning }, tasks, threads, worktrees] = await Promise.all([
     findGitParents(directory, prs, trunk),
     findTasks(paseo, nameWithOwner),
     unresolvedThreads(directory, nameWithOwner).catch((error: unknown) => {
@@ -58,11 +59,13 @@ export async function listPrStack(
       );
       return new Map<number, number>();
     }),
+    listWorktrees(directory).catch(() => new Map<string, string>()),
   ]);
   if (warning) warnings.push(warning);
   const groups = buildPrGroups(prs, trunk, parents);
   for (const pr of groups.flatMap((group) => group.prs)) {
     pr.threads = threads.get(pr.number) ?? 0;
+    pr.worktree = worktrees.get(pr.head) ?? null;
     const [latest] = tasks.get(taskKey(nameWithOwner, pr.number)) ?? [];
     pr.task = latest
       ? {

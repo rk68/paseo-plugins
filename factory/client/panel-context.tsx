@@ -7,6 +7,7 @@ export interface PanelContextValue {
   directory: string;
   /** Undefined on hosts without client navigation. */
   openAgent: ((agentId: string) => void) | undefined;
+  openWorkspace: ((workspaceId: string) => void) | undefined;
   refresh(): void;
 }
 

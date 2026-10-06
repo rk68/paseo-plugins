@@ -56,15 +56,19 @@ export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspace
   const showList = useCallback(() => setView("list"), []);
   const styles = useMemo(() => createStyles(theme), [theme]);
   const navigateToAgent = navigation?.openAgent;
+  const navigateToWorkspace = navigation?.openWorkspace;
   const panel = useMemo<PanelContextValue>(
     () => ({
       theme,
       styles,
       directory: directory ?? "",
       openAgent: navigateToAgent ? (agentId) => navigateToAgent({ agentId }) : undefined,
+      openWorkspace: navigateToWorkspace
+        ? (target) => navigateToWorkspace({ workspaceId: target })
+        : undefined,
       refresh,
     }),
-    [theme, styles, directory, navigateToAgent, refresh],
+    [theme, styles, directory, navigateToAgent, navigateToWorkspace, refresh],
   );
   const summary = useMemo(() => summarize(query.data?.groups ?? []), [query.data]);
   let headerText = " ";
