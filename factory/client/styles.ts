@@ -49,6 +49,28 @@ export function createStyles(theme: Theme) {
     iconButton,
     iconButtonBusy: { ...iconButton, opacity: 0.5 },
     group: { gap: 2 },
+    stackGroup: {
+      gap: 2,
+      paddingVertical: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+    },
+    stackTitle: {
+      color: colors.foregroundMuted,
+      fontSize: 12,
+      fontWeight: "500" as const,
+      paddingHorizontal: 8,
+      marginBottom: 2,
+    },
+    sortButton: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 4,
+      paddingVertical: 4,
+      paddingHorizontal: 6,
+      borderRadius: 4,
+    },
     groupTitle: {
       color: colors.foregroundMuted,
       fontSize: 14,

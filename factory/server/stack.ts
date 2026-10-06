@@ -17,6 +17,7 @@ export interface GhPr {
   headRefName: string;
   headRefOid: string;
   baseRefName: string;
+  createdAt: string;
   isCrossRepository: boolean;
   isDraft: boolean;
   mergeable: string;
@@ -137,6 +138,7 @@ export function buildPrGroups(
       url: pr.url,
       head: pr.headRefName,
       base: pr.baseRefName,
+      createdAt: pr.createdAt,
       draft: pr.isDraft,
       checks,
       ci: ciStatus(checks),

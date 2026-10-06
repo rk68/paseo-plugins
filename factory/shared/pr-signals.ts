@@ -12,7 +12,7 @@ export interface PrSignal {
 
 export type PrAction = "update" | TaskKind | "checkout" | "open-agent";
 
-const TONE_RANK: Record<Tone, number> = { danger: 0, warning: 1, success: 2, muted: 3 };
+export const TONE_RANK: Record<Tone, number> = { danger: 0, warning: 1, success: 2, muted: 3 };
 const MAX_NAMED_CHECKS = 2;
 const ACTIVE_TASK_STATUSES = new Set(["initializing", "running"]);
 

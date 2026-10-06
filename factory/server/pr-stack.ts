@@ -17,6 +17,7 @@ const PR_FIELDS = [
   "headRefName",
   "headRefOid",
   "baseRefName",
+  "createdAt",
   "isCrossRepository",
   "isDraft",
   "mergeable",

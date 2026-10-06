@@ -14,6 +14,7 @@ const PrSchema = z.object({
   url: z.string(),
   head: z.string(),
   base: z.string(),
+  createdAt: z.string(),
   draft: z.boolean(),
   checks: z.array(CheckSchema),
   ci: z.enum(["pass", "fail", "pending", "none"]),

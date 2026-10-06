@@ -17,6 +17,7 @@ function pr(number: number, head: string, base: string, extra: Partial<GhPr> = {
     headRefName: head,
     headRefOid: `oid-${head}`,
     baseRefName: base,
+    createdAt: "2026-01-01T00:00:00Z",
     isCrossRepository: false,
     isDraft: false,
     mergeable: "MERGEABLE",

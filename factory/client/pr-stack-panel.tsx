@@ -2,6 +2,7 @@ import {
   openExternalUrl,
   type PluginWorkspacePanelProps,
   useRpc,
+  useSettings,
   useWorkspace,
 } from "@getpaseo/plugin/client";
 import { copyText, Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
@@ -9,7 +10,9 @@ import { ExternalLink } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { byUrgency, checkCounts, prSignals, prTone, type Tone } from "../shared/pr-signals";
+import { factorySettings } from "../shared/actions";
+import { age, orderGroups, type PrSort } from "../shared/order";
+import { checkCounts, prSignals, prTone, type Tone } from "../shared/pr-signals";
 import { type Check, type Pr, type PrGroup, prStackRpc } from "../shared/pr-stack";
 import { type PanelContextValue, PanelProvider, usePanel } from "./panel-context";
 import { AutomationView } from "./automation-view";
@@ -51,6 +54,18 @@ export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspace
     (number: number) => setExpanded((current) => (current === number ? null : number)),
     [],
   );
+  const settings = useSettings(factorySettings);
+  const ready = settings.status === "ready" ? settings : null;
+  const sort: PrSort = ready?.values.sort ?? "urgency";
+  const toggleSort = useCallback(() => {
+    if (!ready) return;
+    void ready.save(
+      { ...ready.values, sort: ready.values.sort === "newest" ? "urgency" : "newest" },
+      ready.revision,
+    );
+  }, [ready]);
+  const groups = useMemo(() => orderGroups(query.data?.groups ?? [], sort), [query.data, sort]);
+  const ageAt = sort === "newest" ? query.dataUpdatedAt : null;
   const [view, setView] = useState<"list" | "automation">("list");
   const showAutomation = useCallback(() => setView("automation"), []);
   const showList = useCallback(() => setView("list"), []);
@@ -67,8 +82,9 @@ export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspace
         ? (target) => navigateToWorkspace({ workspaceId: target })
         : undefined,
       refresh,
+      ageAt,
     }),
-    [theme, styles, directory, navigateToAgent, navigateToWorkspace, refresh],
+    [theme, styles, directory, navigateToAgent, navigateToWorkspace, refresh, ageAt],
   );
   const summary = useMemo(() => summarize(query.data?.groups ?? []), [query.data]);
   let headerText = " ";
@@ -86,6 +102,16 @@ export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspace
                 {headerText}
               </Text>
               <View style={styles.headerActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Sorted by ${sort === "newest" ? "newest" : "urgency"}. Change sort`}
+                  onPress={toggleSort}
+                  disabled={!ready}
+                  style={styles.sortButton}
+                >
+                  <Icon name="ArrowDownUp" size={12} color={theme.colors.foregroundMuted} />
+                  <Text style={styles.headerText}>{sort === "newest" ? "Newest" : "Urgent"}</Text>
+                </Pressable>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Automation settings"
@@ -115,11 +141,11 @@ export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspace
             {query.data?.groups.length === 0 ? (
               <Text style={styles.empty}>No open pull requests</Text>
             ) : null}
-            {query.data?.groups.map((group) => (
+            {groups.map((group) => (
               <Group
                 key={`${group.kind}-${group.prs[0]?.number}`}
                 group={group}
-                trunk={query.data.trunk}
+                trunk={query.data?.trunk ?? ""}
                 expanded={expanded}
                 onToggle={toggle}
               />
@@ -144,7 +170,7 @@ function summarize(groups: PrGroup[]): string {
 
 const GROUP_TITLE: Record<PrGroup["kind"], string> = {
   wrong_base: "Wrong base",
-  stack: "Stack · merge top down",
+  stack: "Stack",
   independent: "Independent",
 };
 
@@ -160,18 +186,13 @@ function Group({
   onToggle(number: number): void;
 }) {
   const { styles } = usePanel();
-  const prs = useMemo(
-    () => (group.kind === "independent" ? [...group.prs].sort(byUrgency) : group.prs),
-    [group],
-  );
+  let title = GROUP_TITLE[group.kind];
+  if (group.kind === "independent") title = `${title} · into ${trunk}`;
+  if (group.kind === "stack") title = `Stack of ${group.prs.length} · merge top down`;
   return (
-    <View style={styles.group}>
-      <Text style={styles.groupTitle}>
-        {group.kind === "independent"
-          ? `${GROUP_TITLE.independent} · into ${trunk}`
-          : GROUP_TITLE[group.kind]}
-      </Text>
-      {prs.map((pr) => (
+    <View style={group.kind === "stack" ? styles.stackGroup : styles.group}>
+      <Text style={group.kind === "stack" ? styles.stackTitle : styles.groupTitle}>{title}</Text>
+      {group.prs.map((pr) => (
         <PrRow
           key={pr.number}
           pr={pr}
@@ -195,7 +216,7 @@ function PrRow({
   open: boolean;
   onToggle(number: number): void;
 }) {
-  const { theme, styles } = usePanel();
+  const { theme, styles, ageAt } = usePanel();
   const toggle = useCallback(() => onToggle(pr.number), [onToggle, pr.number]);
   const signals = useMemo(() => {
     const list = prSignals(pr);
@@ -238,7 +259,10 @@ function PrRow({
             </Text>
             <Text style={styles.meta} numberOfLines={open ? undefined : 1}>
               <Text style={styles.tone[tone]}>{lead?.label ?? "Open"}</Text>
-              {rest.length ? ` · ${rest.map((signal) => signal.label).join(" · ")}` : ""}
+              {[ageAt ? age(pr.createdAt, ageAt) : "", ...rest.map((signal) => signal.label)]
+                .filter(Boolean)
+                .map((label) => ` · ${label}`)
+                .join("")}
             </Text>
           </View>
           <Icon

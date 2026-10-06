@@ -9,6 +9,8 @@ export interface PanelContextValue {
   openAgent: ((agentId: string) => void) | undefined;
   openWorkspace: ((workspaceId: string) => void) | undefined;
   refresh(): void;
+  /** Set when PRs are sorted by age, so rows show when each PR was opened. */
+  ageAt: number | null;
 }
 
 const PanelContext = createContext<PanelContextValue | null>(null);

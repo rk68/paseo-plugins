@@ -20,6 +20,7 @@ export const factorySettings = defineSettings({
     prompts: PerTask(z.string().default("")).default({ conflicts: "", ci: "", comments: "" }),
     /** Failing checks with these names never start an automatic CI fix. */
     ignoredChecks: z.array(z.string()).default([]),
+    sort: z.enum(["urgency", "newest"]).default("urgency"),
   }),
   migrate(values, fromVersion) {
     if (fromVersion !== 1) return values;

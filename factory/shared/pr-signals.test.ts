@@ -9,6 +9,7 @@ function pr(extra: Partial<Pr> = {}): Pr {
     url: "u",
     head: "feat",
     base: "main",
+    createdAt: "2026-01-01T00:00:00Z",
     draft: false,
     checks: [],
     ci: "none",

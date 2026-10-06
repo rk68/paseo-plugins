@@ -18,6 +18,7 @@ function state(number: number, extra: Partial<GhPr> = {}, threads = 0): PrState 
       headRefName: `b${number}`,
       headRefOid: `oid${number}`,
       baseRefName: "main",
+      createdAt: "2026-01-01T00:00:00Z",
       isCrossRepository: false,
       isDraft: false,
       mergeable: "MERGEABLE",
