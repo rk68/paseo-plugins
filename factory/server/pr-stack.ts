@@ -49,16 +49,12 @@ export async function listPrStack(
   { directory, scope }: RpcInput<typeof prStackRpc>,
   paseo: PaseoApi,
 ): Promise<PrStack> {
-  const [{ nameWithOwner, trunk }, prs] = await Promise.all([
-    repoInfo(directory),
-    listOpenPrs(directory),
-  ]);
+  const [repo, prs] = await Promise.all([repoInfo(directory), listOpenPrs(directory)]);
+  const { nameWithOwner, trunk } = repo;
   const warnings: string[] = [];
   const [{ parents, uniqueCommits, trunkOid, warning }, tasks, threads, worktrees] =
     await Promise.all([
-      remoteFor(directory, nameWithOwner).then((remote) =>
-        findGitStack(directory, prs, trunk, remote),
-      ),
+      remoteFor(directory, repo).then((remote) => findGitStack(directory, prs, trunk, remote)),
       findTasks(paseo, nameWithOwner),
       unresolvedThreads(directory, nameWithOwner).catch((error: unknown) => {
         warnings.push(

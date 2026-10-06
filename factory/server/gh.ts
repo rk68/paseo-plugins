@@ -47,12 +47,18 @@ export async function gh(directory: string, args: string[]): Promise<string> {
 
 export interface RepoInfo {
   nameWithOwner: string;
+  /** The forge host, such as github.com or a GitHub Enterprise host. */
+  host: string;
   trunk: string;
 }
 
 export async function repoInfo(directory: string): Promise<RepoInfo> {
   const repo = JSON.parse(
-    await gh(directory, ["repo", "view", "--json", "nameWithOwner,defaultBranchRef"]),
-  ) as { nameWithOwner: string; defaultBranchRef: { name: string } };
-  return { nameWithOwner: repo.nameWithOwner, trunk: repo.defaultBranchRef.name };
+    await gh(directory, ["repo", "view", "--json", "nameWithOwner,url,defaultBranchRef"]),
+  ) as { nameWithOwner: string; url: string; defaultBranchRef: { name: string } };
+  return {
+    nameWithOwner: repo.nameWithOwner,
+    host: new URL(repo.url).host,
+    trunk: repo.defaultBranchRef.name,
+  };
 }

@@ -137,6 +137,9 @@ export function startTask(
 ): Promise<StartedTask | null> {
   return withRepoLock(target.repo, async () => {
     const key = taskKey(target.repo, target.number);
+    // The head GitHub reported can move before the fetch; limits and history use the fetched one.
+    const pr = { number: target.number, head: target.head, isCrossRepository: false };
+    const headOid = await fetchHead(directory, target.remote, pr);
     const tasks = await findTasks(paseo, target.repo);
     const history = tasks.get(key) ?? [];
     const running = history.find((task) => isActive(task));
@@ -145,16 +148,13 @@ export function startTask(
     }
     if (
       trigger === "auto" &&
-      (activeTaskCount(tasks) >= MAX_ACTIVE_TASKS_PER_REPO ||
-        !mayStartAuto(history, kind, target.headOid))
+      (activeTaskCount(tasks) >= MAX_ACTIVE_TASKS_PER_REPO || !mayStartAuto(history, kind, headOid))
     ) {
       return null;
     }
 
     // A new branch from the fetched PR head: the user's local branch may hold unpushed commits
     // that a task must never publish, and it is never moved.
-    const pr = { number: target.number, head: target.head, isCrossRepository: false };
-    await fetchHead(directory, target.remote, pr);
     const workspace = await paseo.workspaces.create({
       title: taskTitle(kind, target.number).replace("[Factory] ", ""),
       source: {
@@ -173,7 +173,7 @@ export function startTask(
         [LABEL.repo]: target.repo,
         [LABEL.pr]: key,
         [LABEL.kind]: kind,
-        [LABEL.head]: target.headOid,
+        [LABEL.head]: headOid,
         [LABEL.trigger]: trigger,
       },
     });
@@ -182,7 +182,8 @@ export function startTask(
 }
 
 export async function taskTarget(directory: string, number: number): Promise<TaskTarget> {
-  const { nameWithOwner } = await repoInfo(directory);
+  const repo = await repoInfo(directory);
+  const { nameWithOwner } = repo;
   const [view, remote] = await Promise.all([
     gh(directory, [
       "pr",
@@ -193,7 +194,7 @@ export async function taskTarget(directory: string, number: number): Promise<Tas
       "--json",
       "title,url,headRefName,headRefOid,baseRefName,isCrossRepository,statusCheckRollup",
     ]),
-    requireRemote(directory, nameWithOwner),
+    requireRemote(directory, repo),
   ]);
   const pr = JSON.parse(view) as {
     title: string;

@@ -49,6 +49,8 @@ export const jobLogRpc = defineRpc({
     sshHost: z.string(),
     logPattern: z.string(),
     jobId: z.number(),
+    /** sacct's JobID, such as `1234_0` for an array task. */
+    label: z.string(),
     name: z.string(),
   }),
   output: z.object({ path: z.string(), lines: z.array(z.string()) }),

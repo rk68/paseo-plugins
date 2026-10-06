@@ -13,7 +13,8 @@ export async function openBranch(
   { directory, number }: RpcInput<typeof openBranchRpc>,
   paseo: PaseoApi,
 ): Promise<{ workspaceId: string; created: boolean }> {
-  const { nameWithOwner } = await repoInfo(directory);
+  const repo = await repoInfo(directory);
+  const { nameWithOwner } = repo;
   const pr = JSON.parse(
     await gh(directory, [
       "pr",
@@ -29,7 +30,7 @@ export async function openBranch(
   const target = { number, head: pr.headRefName, isCrossRepository: pr.isCrossRepository };
   const [worktrees, remote] = await Promise.all([
     listWorktrees(directory),
-    requireRemote(directory, nameWithOwner),
+    requireRemote(directory, repo),
   ]);
   await fetchPrHead(directory, remote, target);
   const existing = reusableWorktree(worktrees, target);

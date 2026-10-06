@@ -141,9 +141,28 @@ export function logPattern(path: string, name: string, id: number): string | nul
   return path.replaceAll(String(id), "%j").replaceAll(name, "%x");
 }
 
-/** Fills a `--output` pattern for a finished job; null when it needs data sacct does not give. */
-export function fillLogPattern(pattern: string, name: string, id: number): string | null {
-  return expandOutputPath(pattern, { job_id: id, name, job_state: [] });
+/**
+ * Fills a `--output` pattern for a finished job; null when it needs data sacct does not give.
+ * `label` is sacct's JobID: `1234_0` names array task 0 of array job 1234, which `%A` and `%a` need.
+ */
+export function fillLogPattern(
+  pattern: string,
+  name: string,
+  id: number,
+  label: string,
+): string | null {
+  const array = /^(\d+)_(\d+)$/.exec(label);
+  return expandOutputPath(pattern, {
+    job_id: id,
+    name,
+    job_state: [],
+    ...(array
+      ? {
+          array_job_id: { set: true, number: Number(array[1]) },
+          array_task_id: { set: true, number: Number(array[2]) },
+        }
+      : {}),
+  });
 }
 
 /** Keeps the last carriage-return segment of each line, so progress bars show their latest frame. */

@@ -265,13 +265,22 @@ function FinishedRow({
   ...row
 }: { job: FinishedJob; now: number } & Omit<
   JobRowProps,
-  "id" | "name" | "hasLog" | "icon" | "iconColor" | "spinning" | "children" | keyof ParentProps
+  | "id"
+  | "label"
+  | "name"
+  | "hasLog"
+  | "icon"
+  | "iconColor"
+  | "spinning"
+  | "children"
+  | keyof ParentProps
 >) {
   const status = finishedStatus(job);
   return (
     <JobRow
       {...row}
       id={job.id}
+      label={job.label}
       name={job.name}
       hasLog={job.hasLog}
       icon={FINISHED_ICON[status.tone]}
@@ -305,7 +314,15 @@ function QueueRow({
   onToggleParent(id: number): void;
 } & Omit<
   JobRowProps,
-  "id" | "name" | "hasLog" | "icon" | "iconColor" | "spinning" | "children" | keyof ParentProps
+  | "id"
+  | "label"
+  | "name"
+  | "hasLog"
+  | "icon"
+  | "iconColor"
+  | "spinning"
+  | "children"
+  | keyof ParentProps
 >) {
   const { theme, styles } = row;
   const railStyle = useMemo(
@@ -319,6 +336,7 @@ function QueueRow({
         <JobRow
           {...row}
           id={job.id}
+          label={String(job.id)}
           name={job.name}
           hasLog={job.hasLog}
           icon="LoaderCircle"
@@ -340,6 +358,7 @@ function QueueRow({
         {...row}
         open={false}
         id={job.id}
+        label={String(job.id)}
         name={job.name}
         hasLog={false}
         icon={status.tone === "danger" ? "CircleX" : "Clock"}
@@ -454,6 +473,8 @@ interface ParentProps {
 
 interface JobRowProps extends ParentProps {
   id: number;
+  /** Slurm's display ID, such as `1234_0` for an array task. */
+  label: string;
   name: string;
   hasLog: boolean;
   icon: string;
@@ -470,6 +491,7 @@ interface JobRowProps extends ParentProps {
 
 function JobRow({
   id,
+  label,
   name,
   hasLog,
   icon,
@@ -533,7 +555,14 @@ function JobRow({
         ) : null}
       </View>
       {open ? (
-        <JobLog sshHost={sshHost} logPattern={logPattern} jobId={id} name={name} styles={styles} />
+        <JobLog
+          sshHost={sshHost}
+          logPattern={logPattern}
+          jobId={id}
+          label={label}
+          name={name}
+          styles={styles}
+        />
       ) : null}
     </View>
   );
@@ -543,19 +572,21 @@ function JobLog({
   sshHost,
   logPattern,
   jobId,
+  label,
   name,
   styles,
 }: {
   sshHost: string;
   logPattern: string;
   jobId: number;
+  label: string;
   name: string;
   styles: Styles;
 }) {
   const readLog = useRpc(jobLogRpc);
   const query = useQuery({
     queryKey: ["lab.jobs.log", sshHost, jobId],
-    queryFn: () => readLog({ sshHost, logPattern, jobId, name }),
+    queryFn: () => readLog({ sshHost, logPattern, jobId, label, name }),
     refetchInterval: LOG_REFRESH_MS,
   });
   const scroller = useRef<NativeScrollView>(null);

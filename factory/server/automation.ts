@@ -108,17 +108,17 @@ export function targetFromPr(
 }
 
 /**
- * Records an automatic attempt once it ran or failed. A start declined for capacity is not an
- * attempt, so a later tick tries it again.
+ * Records an automatic attempt once it ran or failed. A start declined for capacity, or one that
+ * found another task already working on the PR, is not an attempt, so a later tick rechecks it.
  */
-export async function runAttempt<Result>(
+export async function runAttempt<Result extends { reused: boolean }>(
   attempted: Set<string>,
   attempt: string,
   start: () => Promise<Result | null>,
 ): Promise<Result | null> {
   try {
     const started = await start();
-    if (started !== null) attempted.add(attempt);
+    if (started && !started.reused) attempted.add(attempt);
     return started;
   } catch (error) {
     attempted.add(attempt);
@@ -147,15 +147,13 @@ export function createAutomation(
     prompts: Record<TaskKind, string>,
     ignored: ReadonlySet<string>,
   ) {
-    const [{ nameWithOwner }, prs] = await Promise.all([
-      repoInfo(directory),
-      listOpenPrs(directory),
-    ]);
+    const [repo, prs] = await Promise.all([repoInfo(directory), listOpenPrs(directory)]);
+    const { nameWithOwner } = repo;
     const threads = enabled.comments
       ? await unresolvedThreads(directory, nameWithOwner)
       : new Map<number, number>();
     const states = prs.map((pr) => ({ pr, threads: threads.get(pr.number) ?? 0 }));
-    const remote = await remoteFor(directory, nameWithOwner);
+    const remote = await remoteFor(directory, repo);
     if (!remote) throw new Error(`no git remote points to ${nameWithOwner}`);
     const tasks = await findTasks(api, nameWithOwner);
     for (const { state, kind } of nextTasks(

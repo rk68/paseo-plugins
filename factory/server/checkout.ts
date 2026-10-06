@@ -8,18 +8,24 @@ export function reusableWorktree(
   return worktrees.get(localBranchFor(pr));
 }
 
-/** The local branch that holds a PR: its own name for same-repository PRs, `pr/<n>` for forks. */
+/**
+ * The local branch that holds a PR: its own name for same-repository PRs. Fork PRs get a branch
+ * in the plugin's own namespace, so they never meet a user branch such as `pr/7`.
+ */
 export function localBranchFor(pr: { number: number; head: string; isCrossRepository: boolean }) {
-  return pr.isCrossRepository ? `pr/${pr.number}` : pr.head;
+  return pr.isCrossRepository ? `factory/fork-pr-${pr.number}` : pr.head;
 }
 
-/** The remote ref a PR's head is fetched into, so later commands never depend on `origin`. */
+/**
+ * The ref a PR's head is fetched into. Same-repository heads use the normal tracking ref; fork
+ * heads use a private namespace, since `refs/remotes/<remote>/pr/7` can be a real branch.
+ */
 export function remotePrRef(
   remote: string,
   pr: { number: number; head: string; isCrossRepository: boolean },
 ) {
   return pr.isCrossRepository
-    ? `refs/remotes/${remote}/pr/${pr.number}`
+    ? `refs/factory/${remote}/pull/${pr.number}`
     : `refs/remotes/${remote}/${pr.head}`;
 }
 

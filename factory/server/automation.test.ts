@@ -161,10 +161,11 @@ describe("taskPrompt", () => {
 });
 
 describe("runAttempt", () => {
-  it("records started and failed attempts but not a start declined for capacity", async () => {
+  it("records started and failed attempts, not declined or reused ones", async () => {
     const attempted = new Set<string>();
     await runAttempt(attempted, "declined", async () => null);
-    await runAttempt(attempted, "started", async () => ({ agentId: "a" }));
+    await runAttempt(attempted, "reused", async () => ({ reused: true }));
+    await runAttempt(attempted, "started", async () => ({ reused: false }));
     await runAttempt(attempted, "failed", async () => {
       throw new Error("boom");
     }).catch(() => undefined);

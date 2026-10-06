@@ -143,12 +143,20 @@ describe("log patterns", () => {
   it("learns a --output pattern from one job and fills it for another", () => {
     const pattern = logPattern("/home/user/logs/train-b-1339.log", "train-b", 1339);
     expect(pattern).toBe("/home/user/logs/%x-%j.log");
-    expect(fillLogPattern(pattern ?? "", "smoke", 1338)).toBe("/home/user/logs/smoke-1338.log");
+    expect(fillLogPattern(pattern ?? "", "smoke", 1338, "1338")).toBe(
+      "/home/user/logs/smoke-1338.log",
+    );
   });
 
   it("expands every placeholder of a configured pattern, including zero padding", () => {
-    expect(fillLogPattern("/logs/%x-%05j.log", "train", 1339)).toBe("/logs/train-01339.log");
-    expect(fillLogPattern("/logs/%N.log", "train", 1339)).toBeNull();
+    expect(fillLogPattern("/logs/%x-%05j.log", "train", 1339, "1339")).toBe(
+      "/logs/train-01339.log",
+    );
+    expect(fillLogPattern("/logs/%N.log", "train", 1339, "1339")).toBeNull();
+  });
+
+  it("uses the array master ID for %A of a finished array task", () => {
+    expect(fillLogPattern("/logs/%A_%a.out", "sweep", 1236, "1234_0")).toBe("/logs/1234_0.out");
   });
 
   it("learns nothing from a path without the job id", () => {

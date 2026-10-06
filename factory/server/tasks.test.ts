@@ -154,3 +154,24 @@ describe("findTasks", () => {
     expect(await startTask(fakePaseo(agents), "/repo", "ci", target, "", "auto")).toBeNull();
   });
 });
+
+describe("fetched head", () => {
+  it("judges limits by the fetched head and records it on the agent", async () => {
+    const movedTo = async () => "h2";
+    const tried = [taskAgent("a1", 7, {}, { "factory.head": "h2" })];
+    const declined = await startWithFetch(
+      fakePaseo(tried),
+      "/repo",
+      "ci",
+      target,
+      "",
+      "auto",
+      movedTo,
+    );
+    expect(declined).toBeNull();
+
+    const agents: FakeAgent[] = [];
+    await startWithFetch(fakePaseo(agents), "/repo", "ci", target, "", "manual", movedTo);
+    expect(agents[0]?.labels["factory.head"]).toBe("h2");
+  });
+});

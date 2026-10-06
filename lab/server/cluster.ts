@@ -126,6 +126,7 @@ export async function readJobLog({
   sshHost,
   logPattern: configured,
   jobId,
+  label,
   name,
 }: RpcInput<typeof jobLogRpc>) {
   const logs = hostLogs(sshHost);
@@ -133,7 +134,7 @@ export async function readJobLog({
   const candidates = known
     ? [known]
     : patternsFor(logs, configured)
-        .map((pattern) => fillLogPattern(pattern, name, jobId))
+        .map((pattern) => fillLogPattern(pattern, name, jobId, label))
         .filter((path): path is string => path !== null);
   if (!candidates.length) throw new Error(`No log path known for job ${jobId}`);
   // Prints the first candidate that exists, then its tail; exits with a marker code when none exist.

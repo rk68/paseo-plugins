@@ -7,16 +7,17 @@ const fork = { number: 7, head: "main", isCrossRepository: true };
 describe("PR refs", () => {
   it("keeps fork heads apart from same-named local branches", () => {
     expect(localBranchFor(own)).toBe("main");
-    expect(localBranchFor(fork)).toBe("pr/7");
+    expect(localBranchFor(fork)).toBe("factory/fork-pr-7");
     expect(remotePrRef("work", own)).toBe("refs/remotes/work/main");
-    expect(remotePrRef("work", fork)).toBe("refs/remotes/work/pr/7");
+    expect(remotePrRef("work", fork)).toBe("refs/factory/work/pull/7");
   });
 });
 
 describe("reusableWorktree", () => {
   const worktrees = new Map([
     ["main", "/repo"],
-    ["pr/9", "/wt/pr-9"],
+    ["pr/7", "/wt/unrelated"],
+    ["factory/fork-pr-9", "/wt/pr-9"],
   ]);
 
   it("never reuses a local worktree for a fork PR with the same branch name", () => {
