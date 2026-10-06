@@ -1,6 +1,6 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { TASK_KINDS, type TaskKind } from "../shared/actions";
-import { gh, repoId, repoInfo } from "./gh";
+import { gh, mainCheckout, repoId, repoInfo } from "./gh";
 import { fetchPrHead } from "./checkout";
 import { git } from "./worktrees";
 import { requireRemote } from "./remote";
@@ -15,6 +15,9 @@ const LABEL = {
   kind: "factory.task",
   head: "factory.head",
   trigger: "factory.trigger",
+  workspace: "factory.workspace",
+  base: "factory.base",
+  root: "factory.root",
 } as const;
 
 const AGENT_CONFIG = {
@@ -121,12 +124,17 @@ export interface TaskGit {
   fetchHead: typeof fetchPrHead;
   pinRef(directory: string, ref: string, oid: string): Promise<unknown>;
   unpinRef(directory: string, ref: string): Promise<unknown>;
+  mainCheckout(directory: string): Promise<string>;
 }
+
+const ZERO_OID = "0000000000000000000000000000000000000000";
 
 const repositoryGit: TaskGit = {
   fetchHead: fetchPrHead,
-  pinRef: (directory, ref, oid) => git(directory, ["update-ref", ref, oid]),
+  // The zero old value makes this create-only, so an existing branch is never moved.
+  pinRef: (directory, ref, oid) => git(directory, ["update-ref", ref, oid, ZERO_OID]),
   unpinRef: (directory, ref) => git(directory, ["update-ref", "-d", ref]),
+  mainCheckout,
 };
 
 export interface StartedTask {
@@ -170,10 +178,16 @@ export function startTask(
 
     // A new branch from the fetched PR head: the user's local branch may hold unpushed commits
     // that a task must never publish, and it is never moved.
-    // The tracking ref can move under another fetch; a task-only ref pins the checked commit.
-    const branchName = `factory/pr-${target.number}-${kind}-${Date.now().toString(36)}`;
-    const pinned = `refs/factory/tasks/${branchName}`;
+    // The tracking ref can move under another fetch, so a local base branch pins the checked
+    // commit. Paseo keeps it as the workspace's diff base and only resolves refs/heads and
+    // refs/remotes there, so it lives under refs/heads until the workspace is archived.
+    const suffix = `pr-${target.number}-${kind}-${Date.now().toString(36)}`;
+    const branchName = `factory/${suffix}`;
+    const baseBranch = `factory/base/${suffix}`;
+    const pinned = `refs/heads/${baseBranch}`;
+    const root = await io.mainCheckout(directory);
     await io.pinRef(directory, pinned, headOid);
+    const release = () => io.unpinRef(root, pinned).catch(() => undefined);
     const workspace = await paseo.workspaces
       .create({
         title: taskTitle(kind, target.number).replace("[Factory] ", ""),
@@ -185,7 +199,10 @@ export function startTask(
           branchName,
         },
       })
-      .finally(() => io.unpinRef(directory, pinned).catch(() => undefined));
+      .catch(async (error: unknown) => {
+        await release();
+        throw error;
+      });
     const agent = await workspace.agents.create({
       config: AGENT_CONFIG,
       title: taskTitle(kind, target.number),
@@ -196,10 +213,31 @@ export function startTask(
         [LABEL.kind]: kind,
         [LABEL.head]: headOid,
         [LABEL.trigger]: trigger,
+        [LABEL.workspace]: workspace.id,
+        [LABEL.base]: baseBranch,
+        [LABEL.root]: root,
       },
     });
     return { agentId: agent.id, workspaceId: workspace.id, reused: false };
   });
+}
+
+/** Deletes the base branches of the tasks in an archived workspace. */
+export async function releaseTaskBases(
+  paseo: PaseoApi,
+  workspaceId: string,
+  io: Pick<TaskGit, "unpinRef"> = repositoryGit,
+): Promise<void> {
+  const { entries } = await paseo.agents.list({
+    filter: { labels: { [LABEL.workspace]: workspaceId }, includeArchived: true },
+  });
+  for (const { agent } of entries) {
+    const base = agent.labels?.[LABEL.base];
+    const root = agent.labels?.[LABEL.root];
+    if (base?.startsWith("factory/base/") && root) {
+      await io.unpinRef(root, `refs/heads/${base}`).catch(() => undefined);
+    }
+  }
 }
 
 export async function taskTarget(directory: string, number: number): Promise<TaskTarget> {

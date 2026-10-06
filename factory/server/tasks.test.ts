@@ -1,13 +1,15 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { describe, expect, it } from "vitest";
 import type { TaskTarget } from "./task-prompts";
-import { findTasks, startTask as startWithFetch } from "./tasks";
+import { findTasks, releaseTaskBases, startTask as startWithFetch } from "./tasks";
 
 const pins: { ref: string; oid: string }[] = [];
+const unpins: { root: string; ref: string }[] = [];
 const fakeGit = (head: string) => ({
   fetchHead: async () => head,
   pinRef: async (_directory: string, ref: string, oid: string) => pins.push({ ref, oid }),
-  unpinRef: async () => undefined,
+  unpinRef: async (root: string, ref: string) => unpins.push({ root, ref }),
+  mainCheckout: async () => "/main",
 });
 const startTask = (...args: Parameters<typeof startWithFetch>) =>
   startWithFetch(args[0], args[1], args[2], args[3], args[4], args[5], fakeGit("h7"));
@@ -200,11 +202,23 @@ describe("task identity and start commit", () => {
     expect(started?.reused).toBe(false);
   });
 
-  it("creates the worktree from a ref pinned to the fetched commit", async () => {
+  it("bases the worktree on a kept local branch at the fetched commit, released on archive", async () => {
     pins.length = 0;
+    unpins.length = 0;
     sources.length = 0;
-    await startTask(fakePaseo([]), "/repo", "ci", target, "", "manual");
+    const agents: FakeAgent[] = [];
+    const paseo = fakePaseo(agents);
+    await startTask(paseo, "/repo", "ci", target, "", "manual");
+
+    // Paseo resolves a workspace's diff base only under refs/heads or refs/remotes.
+    expect(sources[0]).toMatch(/^refs\/heads\/factory\/base\/pr-7-ci-/);
     expect(pins).toEqual([{ ref: sources[0], oid: "h7" }]);
-    expect(sources[0]).toMatch(/^refs\/factory\/tasks\/factory\/pr-7-ci-/);
+    expect(unpins).toEqual([]);
+    const labels = agents[0]?.labels ?? {};
+    expect(`refs/heads/${labels["factory.base"]}`).toBe(sources[0]);
+    expect(labels["factory.root"]).toBe("/main");
+
+    await releaseTaskBases(paseo, labels["factory.workspace"] ?? "", fakeGit("h7"));
+    expect(unpins).toEqual([{ root: "/main", ref: sources[0] }]);
   });
 });
