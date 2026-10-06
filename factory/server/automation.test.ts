@@ -115,6 +115,7 @@ describe("nextTasks", () => {
 describe("taskPrompt", () => {
   const target = {
     repo: REPO,
+    host: "github.com",
     number: 7,
     title: "t",
     url: "u",
@@ -136,8 +137,14 @@ describe("taskPrompt", () => {
   it("uses the remote and repository of the PR, not origin", () => {
     const prompt = taskPrompt("conflicts", target, "");
     expect(prompt).toContain("git merge 'upstream/main'");
-    expect(prompt).toContain("gh pr view 7 --repo o/r");
+    expect(prompt).toContain("gh pr view 7 --repo github.com/o/r");
     expect(prompt).not.toContain("origin");
+  });
+
+  it("sends GraphQL calls to the PR's forge host", () => {
+    const prompt = taskPrompt("comments", { ...target, host: "ghe.example.com" }, "");
+    expect(prompt).toContain("gh api graphql --hostname ghe.example.com");
+    expect(prompt).toContain("--repo ghe.example.com/o/r");
   });
 
   it("quotes a branch name that holds shell syntax", () => {

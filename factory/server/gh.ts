@@ -52,6 +52,11 @@ export interface RepoInfo {
   trunk: string;
 }
 
+/** `host/owner/repo`: the identity for task labels, keys and locks, and the gh --repo value. */
+export function repoId(info: Pick<RepoInfo, "host" | "nameWithOwner">): string {
+  return `${info.host}/${info.nameWithOwner}`.toLowerCase();
+}
+
 export async function repoInfo(directory: string): Promise<RepoInfo> {
   const repo = JSON.parse(
     await gh(directory, ["repo", "view", "--json", "nameWithOwner,url,defaultBranchRef"]),

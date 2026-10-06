@@ -1,7 +1,10 @@
 import type { TaskKind } from "../shared/actions";
 
 export interface TaskTarget {
+  /** `owner/repo`. */
   repo: string;
+  /** Forge host, such as github.com or a GitHub Enterprise host. */
+  host: string;
   number: number;
   title: string;
   url: string;
@@ -34,7 +37,7 @@ export function taskTitle(kind: TaskKind, number: number): string {
 
 function context(target: TaskTarget, problem: string): string {
   return `## Context
-- Repository: ${target.repo}. Pull request: ${target.url} ("${target.title}").
+- Repository: ${target.host}/${target.repo}. Pull request: ${target.url} ("${target.title}").
 - ${problem}
 - This worktree is on a new local branch that starts at the PR head fetched from the remote \`${target.remote}\`. Push to the PR branch with the command below, not to the local branch name.`;
 }
@@ -63,7 +66,7 @@ ${context(target, `GitHub reports that \`${target.head}\` conflicts with \`${tar
 ## Steps
 ${syncSteps(target)}
 3. Merge the base branch: \`git merge ${remoteRef(target, target.base)}\`.
-4. Resolve every conflict. Keep the intent of both sides. Read the PR (\`gh pr view ${target.number} --repo ${target.repo}\`) and the commits on both sides before you choose a resolution.
+4. Resolve every conflict. Keep the intent of both sides. Read the PR (\`gh pr view ${target.number} --repo ${target.host}/${target.repo}\`) and the commits on both sides before you choose a resolution.
 ${finishSteps(target, 5, "the merge with the default merge message")}
 8. Report each conflicting file and how you resolved it.
 
@@ -82,7 +85,7 @@ ${checks}
 
 ## Steps
 ${syncSteps(target)}
-3. Read the failure output. For GitHub Actions, run \`gh pr checks ${target.number} --repo ${target.repo}\`, then \`gh run view <run-id> --repo ${target.repo} --log-failed\`. For other checks, open the details URL.
+3. Read the failure output. For GitHub Actions, run \`gh pr checks ${target.number} --repo ${target.host}/${target.repo}\`, then \`gh run view <run-id> --repo ${target.host}/${target.repo} --log-failed\`. For other checks, open the details URL.
 4. Find the root cause and fix the code. If the failure does not come from the code in this PR (a flaky test, an infrastructure fault, or a check that needs PR metadata such as a ticket link), do not change code. Report the cause instead.
 5. Run the failing check locally if the repository supports it.
 ${finishSteps(target, 6, "with a Conventional Commits message, for example `fix(ci): ...`")}
@@ -102,13 +105,13 @@ ${context(target, "The PR has unresolved review threads, or a reviewer requested
 ## Steps
 ${syncSteps(target)}
 3. List the unresolved threads with their IDs:
-   \`gh api graphql -f query='{ repository(owner:"${owner}", name:"${name}") { pullRequest(number:${target.number}) { reviewThreads(first:100) { nodes { id isResolved isOutdated path line comments(first:20) { nodes { author { login } body } } } } } } }'\`
-   Also read \`gh pr view ${target.number} --repo ${target.repo} --comments\` for review summaries.
+   \`gh api graphql --hostname ${target.host} -f query='{ repository(owner:"${owner}", name:"${name}") { pullRequest(number:${target.number}) { reviewThreads(first:100) { nodes { id isResolved isOutdated path line comments(first:20) { nodes { author { login } body } } } } } } }'\`
+   Also read \`gh pr view ${target.number} --repo ${target.host}/${target.repo} --comments\` for review summaries.
 4. For each unresolved thread, decide if the comment is correct.
    - If it is correct, change the code.
-   - If it is not correct, do not change the code. Reply with the reason: \`gh api graphql -f query='mutation($id:ID!,$body:String!){ addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id, body:$body}) { comment { id } } }' -f id=<thread-id> -f body='<reason>'\`.
+   - If it is not correct, do not change the code. Reply with the reason: \`gh api graphql --hostname ${target.host} -f query='mutation($id:ID!,$body:String!){ addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id, body:$body}) { comment { id } } }' -f id=<thread-id> -f body='<reason>'\`.
 ${finishSteps(target, 5, "with a Conventional Commits message")}
-8. Resolve each thread that you fixed or answered: \`gh api graphql -f query='mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}) { thread { id } } }' -f id=<thread-id>\`.
+8. Resolve each thread that you fixed or answered: \`gh api graphql --hostname ${target.host} -f query='mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}) { thread { id } } }' -f id=<thread-id>\`.
 9. Report each thread and what you did.
 
 ${CONSTRAINTS}`;

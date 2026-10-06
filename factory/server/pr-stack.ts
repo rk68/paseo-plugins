@@ -1,7 +1,7 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { RpcInput } from "@getpaseo/plugin";
 import type { PrStack, prStackRpc } from "../shared/pr-stack";
-import { gh, repoInfo } from "./gh";
+import { gh, repoId, repoInfo } from "./gh";
 import { findGitStack } from "./git-stack";
 import { reusableWorktree } from "./checkout";
 import { remoteFor } from "./remote";
@@ -50,13 +50,13 @@ export async function listPrStack(
   paseo: PaseoApi,
 ): Promise<PrStack> {
   const [repo, prs] = await Promise.all([repoInfo(directory), listOpenPrs(directory)]);
-  const { nameWithOwner, trunk } = repo;
+  const { trunk } = repo;
   const warnings: string[] = [];
   const [{ parents, uniqueCommits, trunkOid, warning }, tasks, threads, worktrees] =
     await Promise.all([
       remoteFor(directory, repo).then((remote) => findGitStack(directory, prs, trunk, remote)),
-      findTasks(paseo, nameWithOwner),
-      unresolvedThreads(directory, nameWithOwner).catch((error: unknown) => {
+      findTasks(paseo, repoId(repo)),
+      unresolvedThreads(directory, repo).catch((error: unknown) => {
         warnings.push(
           `Review comments unavailable: ${error instanceof Error ? error.message : error}`,
         );
@@ -80,7 +80,7 @@ export async function listPrStack(
         head: pr.head,
         isCrossRepository: crossRepository.has(pr.number),
       }) ?? null;
-    const [latest] = tasks.get(taskKey(nameWithOwner, pr.number)) ?? [];
+    const [latest] = tasks.get(taskKey(repoId(repo), pr.number)) ?? [];
     pr.task = latest
       ? {
           kind: latest.kind,

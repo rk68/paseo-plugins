@@ -6,7 +6,7 @@ import {
   TASK_KINDS,
   type TaskKind,
 } from "../shared/actions";
-import { mainCheckout, repoInfo } from "./gh";
+import { mainCheckout, type RepoInfo, repoId, repoInfo } from "./gh";
 import { listOpenPrs } from "./pr-stack";
 import { type GhPr, toChecks } from "./stack";
 import type { TaskTarget } from "./task-prompts";
@@ -89,13 +89,14 @@ export function nextTasks(
 }
 
 export function targetFromPr(
-  repo: string,
+  repo: Pick<RepoInfo, "host" | "nameWithOwner">,
   remote: string,
   pr: GhPr,
   ignored: ReadonlySet<string>,
 ): TaskTarget {
   return {
-    repo,
+    repo: repo.nameWithOwner,
+    host: repo.host,
     number: pr.number,
     title: pr.title,
     url: pr.url,
@@ -150,22 +151,16 @@ export function createAutomation(
     const [repo, prs] = await Promise.all([repoInfo(directory), listOpenPrs(directory)]);
     const { nameWithOwner } = repo;
     const threads = enabled.comments
-      ? await unresolvedThreads(directory, nameWithOwner)
+      ? await unresolvedThreads(directory, repo)
       : new Map<number, number>();
     const states = prs.map((pr) => ({ pr, threads: threads.get(pr.number) ?? 0 }));
     const remote = await remoteFor(directory, repo);
     if (!remote) throw new Error(`no git remote points to ${nameWithOwner}`);
-    const tasks = await findTasks(api, nameWithOwner);
-    for (const { state, kind } of nextTasks(
-      states,
-      nameWithOwner,
-      tasks,
-      enabled,
-      ignored,
-      attempted,
-    )) {
-      const key = taskKey(nameWithOwner, state.pr.number);
-      const target = targetFromPr(nameWithOwner, remote, state.pr, ignored);
+    const id = repoId(repo);
+    const tasks = await findTasks(api, id);
+    for (const { state, kind } of nextTasks(states, id, tasks, enabled, ignored, attempted)) {
+      const key = taskKey(id, state.pr.number);
+      const target = targetFromPr(repo, remote, state.pr, ignored);
       const started = await runAttempt(attempted, `${key}:${kind}@${state.pr.headRefOid}`, () =>
         startTask(api, directory, kind, target, prompts[kind], "auto"),
       );

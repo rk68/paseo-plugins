@@ -26,6 +26,12 @@ export function parseRemoteUrl(url: string): RemoteUrl | null {
   return scp ? { host: scp[1], ssh: true, repo: `${scp[2]}/${scp[3]}`.toLowerCase() } : null;
 }
 
+/** GitHub serves SSH over port 443 at ssh.github.com; both names are the same forge. */
+export function forgeHost(host: string): string {
+  const lower = host.toLowerCase();
+  return lower === "ssh.github.com" ? "github.com" : lower;
+}
+
 /**
  * The remote whose fetch and push URLs all point at the repository on the expected host,
  * preferring `origin`. `resolveHost` maps SSH aliases to real host names. A remote with any URL
@@ -46,10 +52,10 @@ export function pickRemote(
     urls.set(name, entry);
   }
   const repo = target.repo.toLowerCase();
-  const host = target.host.toLowerCase();
+  const host = forgeHost(target.host);
   const pointsAtTarget = (url: string) => {
     const parsed = parseRemoteUrl(url);
-    return parsed !== null && parsed.repo === repo && resolveHost(parsed).toLowerCase() === host;
+    return parsed !== null && parsed.repo === repo && forgeHost(resolveHost(parsed)) === host;
   };
   const all = (list: string[]) => list.length > 0 && list.every(pointsAtTarget);
   const names = [...urls]

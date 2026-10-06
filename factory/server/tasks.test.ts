@@ -3,9 +3,14 @@ import { describe, expect, it } from "vitest";
 import type { TaskTarget } from "./task-prompts";
 import { findTasks, startTask as startWithFetch } from "./tasks";
 
-const noFetch = async () => "h7";
+const pins: { ref: string; oid: string }[] = [];
+const fakeGit = (head: string) => ({
+  fetchHead: async () => head,
+  pinRef: async (_directory: string, ref: string, oid: string) => pins.push({ ref, oid }),
+  unpinRef: async () => undefined,
+});
 const startTask = (...args: Parameters<typeof startWithFetch>) =>
-  startWithFetch(args[0], args[1], args[2], args[3], args[4], args[5], noFetch);
+  startWithFetch(args[0], args[1], args[2], args[3], args[4], args[5], fakeGit("h7"));
 
 type PaseoApi = PluginHandlerContext["paseo"];
 
@@ -19,6 +24,8 @@ interface FakeAgent {
 }
 
 /** An in-memory Paseo API: label filter, archived filter, cursor pages and a slow create. */
+const sources: string[] = [];
+
 function fakePaseo(agents: FakeAgent[], pageSize = 2) {
   let created = 0;
   const api = {
@@ -47,7 +54,8 @@ function fakePaseo(agents: FakeAgent[], pageSize = 2) {
       },
     },
     workspaces: {
-      async create() {
+      async create(options: { source: { refName?: string } }) {
+        sources.push(options.source.refName ?? "");
         const workspaceId = `w${++created}`;
         return {
           id: workspaceId,
@@ -86,8 +94,8 @@ function taskAgent(
     createdAt: `2026-01-0${id.length}`,
     archived: false,
     labels: {
-      "factory.repo": "o/r",
-      "factory.pr": `o/r#${number}`,
+      "factory.repo": "github.com/o/r",
+      "factory.pr": `github.com/o/r#${number}`,
       "factory.task": "ci",
       "factory.head": "h",
       "factory.trigger": "auto",
@@ -99,6 +107,7 @@ function taskAgent(
 
 const target: TaskTarget = {
   repo: "o/r",
+  host: "github.com",
   number: 7,
   title: "t",
   url: "u",
@@ -141,8 +150,8 @@ describe("findTasks", () => {
       taskAgent("a3", 3),
       taskAgent("a4", 7, { status: "running" }),
     ];
-    const tasks = await findTasks(fakePaseo(agents, 2), "o/r");
-    expect(tasks.get("o/r#7")?.[0]?.status).toBe("running");
+    const tasks = await findTasks(fakePaseo(agents, 2), "github.com/o/r");
+    expect(tasks.get("github.com/o/r#7")?.[0]?.status).toBe("running");
     const started = await startTask(fakePaseo(agents, 2), "/repo", "ci", target, "", "manual");
     expect(started).toEqual({ agentId: "a4", workspaceId: "w", reused: true });
   });
@@ -157,7 +166,7 @@ describe("findTasks", () => {
 
 describe("fetched head", () => {
   it("judges limits by the fetched head and records it on the agent", async () => {
-    const movedTo = async () => "h2";
+    const movedTo = fakeGit("h2");
     const tried = [taskAgent("a1", 7, {}, { "factory.head": "h2" })];
     const declined = await startWithFetch(
       fakePaseo(tried),
@@ -173,5 +182,29 @@ describe("fetched head", () => {
     const agents: FakeAgent[] = [];
     await startWithFetch(fakePaseo(agents), "/repo", "ci", target, "", "manual", movedTo);
     expect(agents[0]?.labels["factory.head"]).toBe("h2");
+  });
+});
+
+describe("task identity and start commit", () => {
+  it("keeps tasks on the same owner/repo apart across forge hosts", async () => {
+    const enterprise = taskAgent(
+      "a1",
+      7,
+      { status: "running" },
+      {
+        "factory.repo": "ghe.example.com/o/r",
+        "factory.pr": "ghe.example.com/o/r#7",
+      },
+    );
+    const started = await startTask(fakePaseo([enterprise]), "/repo", "ci", target, "", "manual");
+    expect(started?.reused).toBe(false);
+  });
+
+  it("creates the worktree from a ref pinned to the fetched commit", async () => {
+    pins.length = 0;
+    sources.length = 0;
+    await startTask(fakePaseo([]), "/repo", "ci", target, "", "manual");
+    expect(pins).toEqual([{ ref: sources[0], oid: "h7" }]);
+    expect(sources[0]).toMatch(/^refs\/factory\/tasks\/factory\/pr-7-ci-/);
   });
 });

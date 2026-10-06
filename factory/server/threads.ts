@@ -1,4 +1,4 @@
-import { gh } from "./gh";
+import { gh, type RepoInfo } from "./gh";
 
 const QUERY = `query($q: String!) {
   search(query: $q, type: ISSUE, first: 100) {
@@ -20,13 +20,15 @@ interface SearchResult {
 /** Unresolved, current review threads on your open PRs, by PR number. */
 export async function unresolvedThreads(
   directory: string,
-  repo: string,
+  repo: Pick<RepoInfo, "host" | "nameWithOwner">,
 ): Promise<Map<number, number>> {
   const output = await gh(directory, [
     "api",
     "graphql",
+    "--hostname",
+    repo.host,
     "-f",
-    `q=repo:${repo} is:pr is:open author:@me`,
+    `q=repo:${repo.nameWithOwner} is:pr is:open author:@me`,
     "-f",
     `query=${QUERY}`,
   ]);

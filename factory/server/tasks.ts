@@ -1,7 +1,8 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { TASK_KINDS, type TaskKind } from "../shared/actions";
-import { gh, repoInfo } from "./gh";
-import { fetchPrHead, remotePrRef } from "./checkout";
+import { gh, repoId, repoInfo } from "./gh";
+import { fetchPrHead } from "./checkout";
+import { git } from "./worktrees";
 import { requireRemote } from "./remote";
 import { type GhCheck, toChecks } from "./stack";
 import { type TaskTarget, taskPrompt, taskTitle } from "./task-prompts";
@@ -115,6 +116,19 @@ export function withRepoLock<Result>(repo: string, work: () => Promise<Result>):
   return next;
 }
 
+/** The git steps of a task start, injectable so tests need no repository. */
+export interface TaskGit {
+  fetchHead: typeof fetchPrHead;
+  pinRef(directory: string, ref: string, oid: string): Promise<unknown>;
+  unpinRef(directory: string, ref: string): Promise<unknown>;
+}
+
+const repositoryGit: TaskGit = {
+  fetchHead: fetchPrHead,
+  pinRef: (directory, ref, oid) => git(directory, ["update-ref", ref, oid]),
+  unpinRef: (directory, ref) => git(directory, ["update-ref", "-d", ref]),
+};
+
 export interface StartedTask {
   agentId: string;
   workspaceId: string;
@@ -133,14 +147,15 @@ export function startTask(
   target: TaskTarget,
   extraPrompt: string,
   trigger: Trigger,
-  fetchHead: typeof fetchPrHead = fetchPrHead,
+  io: TaskGit = repositoryGit,
 ): Promise<StartedTask | null> {
-  return withRepoLock(target.repo, async () => {
-    const key = taskKey(target.repo, target.number);
+  const repo = repoId({ host: target.host, nameWithOwner: target.repo });
+  return withRepoLock(repo, async () => {
+    const key = taskKey(repo, target.number);
     // The head GitHub reported can move before the fetch; limits and history use the fetched one.
     const pr = { number: target.number, head: target.head, isCrossRepository: false };
-    const headOid = await fetchHead(directory, target.remote, pr);
-    const tasks = await findTasks(paseo, target.repo);
+    const headOid = await io.fetchHead(directory, target.remote, pr);
+    const tasks = await findTasks(paseo, repo);
     const history = tasks.get(key) ?? [];
     const running = history.find((task) => isActive(task));
     if (running) {
@@ -155,22 +170,28 @@ export function startTask(
 
     // A new branch from the fetched PR head: the user's local branch may hold unpushed commits
     // that a task must never publish, and it is never moved.
-    const workspace = await paseo.workspaces.create({
-      title: taskTitle(kind, target.number).replace("[Factory] ", ""),
-      source: {
-        kind: "worktree",
-        cwd: directory,
-        action: "branch-off",
-        refName: remotePrRef(target.remote, pr),
-        branchName: `factory/pr-${target.number}-${kind}-${Date.now().toString(36)}`,
-      },
-    });
+    // The tracking ref can move under another fetch; a task-only ref pins the checked commit.
+    const branchName = `factory/pr-${target.number}-${kind}-${Date.now().toString(36)}`;
+    const pinned = `refs/factory/tasks/${branchName}`;
+    await io.pinRef(directory, pinned, headOid);
+    const workspace = await paseo.workspaces
+      .create({
+        title: taskTitle(kind, target.number).replace("[Factory] ", ""),
+        source: {
+          kind: "worktree",
+          cwd: directory,
+          action: "branch-off",
+          refName: pinned,
+          branchName,
+        },
+      })
+      .finally(() => io.unpinRef(directory, pinned).catch(() => undefined));
     const agent = await workspace.agents.create({
       config: AGENT_CONFIG,
       title: taskTitle(kind, target.number),
       prompt: taskPrompt(kind, target, extraPrompt),
       labels: {
-        [LABEL.repo]: target.repo,
+        [LABEL.repo]: repo,
         [LABEL.pr]: key,
         [LABEL.kind]: kind,
         [LABEL.head]: headOid,
@@ -190,7 +211,7 @@ export async function taskTarget(directory: string, number: number): Promise<Tas
       "view",
       String(number),
       "--repo",
-      nameWithOwner,
+      repoId(repo),
       "--json",
       "title,url,headRefName,headRefOid,baseRefName,isCrossRepository,statusCheckRollup",
     ]),
@@ -208,6 +229,7 @@ export async function taskTarget(directory: string, number: number): Promise<Tas
   if (pr.isCrossRepository) throw new Error(`#${number} comes from a fork; fix it by hand`);
   return {
     repo: nameWithOwner,
+    host: repo.host,
     number,
     title: pr.title,
     url: pr.url,

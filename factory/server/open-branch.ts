@@ -1,7 +1,7 @@
 import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { openBranchRpc } from "../shared/actions";
-import { gh, repoInfo } from "./gh";
+import { gh, repoId, repoInfo } from "./gh";
 import { ensureLocalBranch, fetchPrHead, remotePrRef, reusableWorktree } from "./checkout";
 import { requireRemote } from "./remote";
 import { fastForward, listWorktrees } from "./worktrees";
@@ -14,14 +14,14 @@ export async function openBranch(
   paseo: PaseoApi,
 ): Promise<{ workspaceId: string; created: boolean }> {
   const repo = await repoInfo(directory);
-  const { nameWithOwner } = repo;
+
   const pr = JSON.parse(
     await gh(directory, [
       "pr",
       "view",
       String(number),
       "--repo",
-      nameWithOwner,
+      repoId(repo),
       "--json",
       "title,headRefName,isCrossRepository",
     ]),

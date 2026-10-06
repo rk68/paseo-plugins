@@ -52,6 +52,13 @@ describe("pickRemote", () => {
     ).toBe("origin");
   });
 
+  it("accepts GitHub's SSH-over-443 endpoint as github.com", () => {
+    const over443 = () => "ssh.github.com";
+    expect(pickRemote(remotes([["origin", "git@github.com:org/repo.git"]]), target, over443)).toBe(
+      "origin",
+    );
+  });
+
   it("rejects the same owner/repo on another host", () => {
     const verbose = remotes([
       ["origin", "https://gitlab.com/org/repo.git"],
