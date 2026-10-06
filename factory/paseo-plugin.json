@@ -2,5 +2,6 @@
   "id": "factory",
   "requirements": {
     "paseo": ">=0.9.1"
-  }
+  },
+  "description": "PR stack: stacks, CI, reviews and conflicts, with one-click fixes and agent tasks"
 }

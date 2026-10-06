@@ -2,5 +2,6 @@
   "id": "lab",
   "requirements": {
     "paseo": ">=0.9.1"
-  }
+  },
+  "description": "Slurm cluster jobs: queue pipelines, progress, finished jobs and logs over SSH"
 }
