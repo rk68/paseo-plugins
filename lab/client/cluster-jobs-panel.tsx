@@ -22,10 +22,12 @@ import {
   type JobStatus,
   limitUsed,
   queueTree,
+  visibleQueue,
   timeAgo,
   type Tone,
   waitStatus,
 } from "../shared/format";
+import { Spinner } from "./spinner";
 
 type Theme = PluginWorkspacePanelProps["theme"];
 type Styles = ReturnType<typeof createStyles>;
@@ -140,6 +142,18 @@ function Jobs({
   const waiting = query.data?.queued.filter((job) => job.state !== "RUNNING") ?? [];
   const finished = query.data?.finished ?? [];
   const queue = useMemo(() => queueTree(query.data?.queued ?? []), [query.data]);
+  // Pipelines start collapsed into their first job; the user opens the ones they follow.
+  const [openParents, setOpenParents] = useState<ReadonlySet<number>>(new Set());
+  const toggleParent = useCallback(
+    (id: number) =>
+      setOpenParents((current) => {
+        const next = new Set(current);
+        if (!next.delete(id)) next.add(id);
+        return next;
+      }),
+    [],
+  );
+  const shownQueue = useMemo(() => visibleQueue(queue, openParents), [queue, openParents]);
   const counts = [
     running.length ? `${running.length} running` : "",
     waiting.length ? `${waiting.length} waiting` : "",
@@ -178,11 +192,14 @@ function Jobs({
         <Text style={styles.empty}>No jobs in the last 24 hours</Text>
       ) : null}
       <Section title="Queue" styles={styles} visible={queue.length > 0}>
-        {queue.map(({ job, depth }) => (
+        {shownQueue.map(({ job, depth, descendants }) => (
           <QueueRow
             key={job.id}
             job={job}
             depth={depth}
+            descendants={descendants}
+            collapsed={!openParents.has(job.id)}
+            onToggleParent={toggleParent}
             sshHost={sshHost}
             logPattern={logPattern}
             open={selected === job.id}
@@ -237,7 +254,7 @@ function FinishedRow({
   ...row
 }: { job: FinishedJob; now: number } & Omit<
   JobRowProps,
-  "id" | "name" | "hasLog" | "icon" | "iconColor" | "children"
+  "id" | "name" | "hasLog" | "icon" | "iconColor" | "spinning" | "children" | keyof ParentProps
 >) {
   const status = finishedStatus(job);
   return (
@@ -265,10 +282,19 @@ const RAIL_STEP = 22;
 function QueueRow({
   job,
   depth,
+  descendants,
+  collapsed,
+  onToggleParent,
   ...row
-}: { job: QueuedJob; depth: number } & Omit<
+}: {
+  job: QueuedJob;
+  depth: number;
+  descendants: number;
+  collapsed: boolean;
+  onToggleParent(id: number): void;
+} & Omit<
   JobRowProps,
-  "id" | "name" | "hasLog" | "icon" | "iconColor" | "children"
+  "id" | "name" | "hasLog" | "icon" | "iconColor" | "spinning" | "children" | keyof ParentProps
 >) {
   const { theme, styles } = row;
   const railStyle = useMemo(
@@ -284,8 +310,12 @@ function QueueRow({
           id={job.id}
           name={job.name}
           hasLog={job.hasLog}
-          icon="CirclePlay"
+          icon="LoaderCircle"
           iconColor={theme.colors.accent}
+          spinning
+          descendants={descendants}
+          collapsed={collapsed}
+          onToggleParent={onToggleParent}
         >
           <RunningDetail job={job} styles={styles} />
         </JobRow>
@@ -303,6 +333,9 @@ function QueueRow({
         hasLog={false}
         icon={status.tone === "danger" ? "CircleX" : "Clock"}
         iconColor={toneColor(theme, status.tone)}
+        descendants={descendants}
+        collapsed={collapsed}
+        onToggleParent={onToggleParent}
       >
         <Meta
           status={status}
@@ -311,6 +344,41 @@ function QueueRow({
         />
       </JobRow>
     </View>
+  );
+}
+
+function ParentToggle({
+  id,
+  count,
+  collapsed,
+  onToggle,
+  theme,
+  styles,
+}: {
+  id: number;
+  count: number;
+  collapsed: boolean;
+  onToggle(id: number): void;
+  theme: Theme;
+  styles: Styles;
+}) {
+  const toggle = useCallback(() => onToggle(id), [onToggle, id]);
+  const a11yState = useMemo(() => ({ expanded: !collapsed }), [collapsed]);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={a11yState}
+      accessibilityLabel={`${collapsed ? "Show" : "Hide"} ${count} jobs that wait for this job`}
+      onPress={toggle}
+      style={styles.parentToggle}
+    >
+      <Text style={styles.parentCount}>{count}</Text>
+      <Icon
+        name={collapsed ? "ChevronRight" : "ChevronDown"}
+        size={14}
+        color={theme.colors.foregroundMuted}
+      />
+    </Pressable>
   );
 }
 
@@ -366,12 +434,20 @@ function Meta({ status, detail, styles }: { status: JobStatus; detail: string; s
   );
 }
 
-interface JobRowProps {
+interface ParentProps {
+  /** Queued jobs that wait on this one; the row shows a toggle for them when above zero. */
+  descendants?: number;
+  collapsed?: boolean;
+  onToggleParent?(id: number): void;
+}
+
+interface JobRowProps extends ParentProps {
   id: number;
   name: string;
   hasLog: boolean;
   icon: string;
   iconColor: string;
+  spinning?: boolean;
   sshHost: string;
   logPattern: string;
   open: boolean;
@@ -387,6 +463,10 @@ function JobRow({
   hasLog,
   icon,
   iconColor,
+  spinning = false,
+  descendants = 0,
+  collapsed = true,
+  onToggleParent,
   sshHost,
   logPattern,
   open,
@@ -399,31 +479,48 @@ function JobRow({
   const a11yState = useMemo(() => ({ expanded: open, disabled: !hasLog }), [open, hasLog]);
   return (
     <View style={open ? styles.cardOpen : undefined}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={a11yState}
-        accessibilityLabel={`Job ${name}${hasLog ? ", show log" : ""}`}
-        disabled={!hasLog}
-        onPress={toggle}
-        style={styles.row}
-      >
-        <View style={styles.leading}>
-          <Icon name={icon} size={14} color={iconColor} />
-        </View>
-        <View style={styles.rowContent}>
-          <Text style={styles.title} numberOfLines={1}>
-            {name}
-          </Text>
-          {children}
-        </View>
-        {hasLog ? (
-          <Icon
-            name={open ? "ChevronDown" : "ChevronRight"}
-            size={14}
-            color={theme.colors.foregroundMuted}
+      <View style={styles.rowLine}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={a11yState}
+          accessibilityLabel={`Job ${name}${hasLog ? ", show log" : ""}`}
+          disabled={!hasLog}
+          onPress={toggle}
+          style={styles.rowMain}
+        >
+          <View style={styles.leading}>
+            {spinning ? (
+              <Spinner size={14} color={iconColor} />
+            ) : (
+              <Icon name={icon} size={14} color={iconColor} />
+            )}
+          </View>
+          <View style={styles.rowContent}>
+            <Text style={styles.title} numberOfLines={1}>
+              {name}
+            </Text>
+            {children}
+          </View>
+          {hasLog ? (
+            <Icon
+              name={open ? "ChevronDown" : "ChevronRight"}
+              size={14}
+              color={theme.colors.foregroundMuted}
+            />
+          ) : null}
+        </Pressable>
+        {/* Beside the row button, not inside it: web cannot nest buttons. */}
+        {descendants && onToggleParent ? (
+          <ParentToggle
+            id={id}
+            count={descendants}
+            collapsed={collapsed}
+            onToggle={onToggleParent}
+            theme={theme}
+            styles={styles}
           />
         ) : null}
-      </Pressable>
+      </View>
       {open ? (
         <JobLog sshHost={sshHost} logPattern={logPattern} jobId={id} name={name} styles={styles} />
       ) : null}
@@ -519,7 +616,18 @@ function createStyles(theme: Theme) {
       paddingHorizontal: 8,
       marginBottom: 4,
     },
-    row,
+    rowLine: { flexDirection: "row" as const, alignItems: "flex-start" as const },
+    rowMain: { ...row, flex: 1 },
+    parentToggle: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 2,
+      paddingVertical: 8,
+      paddingRight: 8,
+      paddingLeft: 4,
+      borderRadius: 6,
+    },
+    parentCount: { color: colors.foregroundMuted, fontSize: 12 },
     cardOpen: { borderRadius: 8, backgroundColor: colors.surface1 },
     rail: { borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: 4 },
     // Optical: lifts the icon onto the title's first line.

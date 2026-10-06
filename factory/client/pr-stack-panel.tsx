@@ -13,6 +13,7 @@ import { byUrgency, checkCounts, prSignals, prTone, type Tone } from "../shared/
 import { type Check, type Pr, type PrGroup, prStackRpc } from "../shared/pr-stack";
 import { type PanelContextValue, PanelProvider, usePanel } from "./panel-context";
 import { AutoResolveToggle, PrActions } from "./pr-actions";
+import { Spinner } from "./spinner";
 import { createStyles, toneColor } from "./styles";
 
 const REFRESH_MS = 60_000;
@@ -201,7 +202,11 @@ function PrRow({
           style={styles.row}
         >
           <View style={styles.leading}>
-            <Icon name={TONE_ICON[tone]} size={14} color={toneColor(theme, tone)} />
+            {lead?.busy ? (
+              <Spinner size={14} color={theme.colors.accent} />
+            ) : (
+              <Icon name={TONE_ICON[tone]} size={14} color={toneColor(theme, tone)} />
+            )}
           </View>
           <View style={styles.rowContent}>
             <Text style={styles.title} numberOfLines={open ? undefined : 1}>

@@ -106,6 +106,8 @@ export function limitUsed(job: Pick<QueuedJob, "elapsedSec" | "limitSec">): numb
 export interface QueueNode {
   job: QueuedJob;
   depth: number;
+  /** Number of queued jobs below this one in its dependency tree. */
+  descendants: number;
 }
 
 /** Orders the queue as dependency trees: each job follows the queued job it waits for. */
@@ -125,15 +127,24 @@ export function queueTree(jobs: QueuedJob[]): QueueNode[] {
   const walk = (job: QueuedJob, depth: number): QueueNode[] => {
     if (visited.has(job.id)) return [];
     visited.add(job.id);
-    return [
-      { job, depth },
-      ...(children.get(job.id) ?? []).flatMap((child) => walk(child, depth + 1)),
-    ];
+    const below = (children.get(job.id) ?? []).flatMap((child) => walk(child, depth + 1));
+    return [{ job, depth, descendants: below.length }, ...below];
   };
   const ordered = roots.flatMap((root) => walk(root, 0));
   // Jobs in a dependency cycle have no root; list them flat so none disappear.
-  return [
-    ...ordered,
-    ...jobs.filter((job) => !visited.has(job.id)).map((job) => ({ job, depth: 0 })),
-  ];
+  const cycle = jobs.filter((job) => !visited.has(job.id));
+  return [...ordered, ...cycle.map((job) => ({ job, depth: 0, descendants: 0 }))];
+}
+
+/** Hides the jobs below each parent that is not in `expanded`. Expects `queueTree` order. */
+export function visibleQueue(nodes: QueueNode[], expanded: ReadonlySet<number>): QueueNode[] {
+  let collapsedDepth = Number.POSITIVE_INFINITY;
+  const visible: QueueNode[] = [];
+  for (const node of nodes) {
+    if (node.depth > collapsedDepth) continue;
+    collapsedDepth = Number.POSITIVE_INFINITY;
+    visible.push(node);
+    if (node.descendants > 0 && !expanded.has(node.job.id)) collapsedDepth = node.depth;
+  }
+  return visible;
 }

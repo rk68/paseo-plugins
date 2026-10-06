@@ -5,6 +5,8 @@ export type Tone = "danger" | "warning" | "success" | "muted";
 export interface PrSignal {
   tone: Tone;
   label: string;
+  /** Work is in progress, such as a resolver agent; the row shows a spinner. */
+  busy?: boolean;
 }
 
 const TONE_RANK: Record<Tone, number> = { danger: 0, warning: 1, success: 2, muted: 3 };
@@ -38,7 +40,7 @@ export function prSignals(pr: Pr): PrSignal[] {
   if (pr.merge === "conflicts") {
     signals.push(
       isResolving(pr)
-        ? { tone: "warning", label: "Resolving conflicts" }
+        ? { tone: "warning", label: "Resolving conflicts", busy: true }
         : { tone: "danger", label: "Conflicts" },
     );
   }

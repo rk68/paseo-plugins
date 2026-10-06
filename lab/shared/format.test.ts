@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { QueuedJob } from "./cluster";
-import { duration, finishedStatus, queueTree, slurmSeconds, timeAgo, waitStatus } from "./format";
+import {
+  duration,
+  finishedStatus,
+  queueTree,
+  slurmSeconds,
+  timeAgo,
+  visibleQueue,
+  waitStatus,
+} from "./format";
 
 describe("waitStatus", () => {
   it.each([
@@ -74,22 +82,48 @@ describe("queueTree", () => {
     hasLog: false,
   });
   const shape = (nodes: ReturnType<typeof queueTree>) => nodes.map((n) => [n.job.id, n.depth]);
+  const pipeline = [
+    job(1519, "PENDING", [1518]),
+    job(1517, "PENDING"),
+    job(1520, "PENDING", [1517]),
+    job(1518, "PENDING", [1517]),
+    job(1510, "RUNNING"),
+  ];
 
   it("nests pipelines under the job they wait for, running roots first", () => {
-    const jobs = [
-      job(1519, "PENDING", [1518]),
-      job(1517, "PENDING"),
-      job(1520, "PENDING", [1517]),
-      job(1518, "PENDING", [1517]),
-      job(1510, "RUNNING"),
-    ];
-    expect(shape(queueTree(jobs))).toEqual([
+    expect(shape(queueTree(pipeline))).toEqual([
       [1510, 0],
       [1517, 0],
       [1518, 1],
       [1519, 2],
       [1520, 1],
     ]);
+  });
+
+  it("counts every job below a parent", () => {
+    const counts = queueTree(pipeline).map((n) => [n.job.id, n.descendants]);
+    expect(counts).toEqual([
+      [1510, 0],
+      [1517, 3],
+      [1518, 1],
+      [1519, 0],
+      [1520, 0],
+    ]);
+  });
+
+  it("hides the subtree of each collapsed parent", () => {
+    const tree = queueTree(pipeline);
+    expect(shape(visibleQueue(tree, new Set()))).toEqual([
+      [1510, 0],
+      [1517, 0],
+    ]);
+    expect(shape(visibleQueue(tree, new Set([1517])))).toEqual([
+      [1510, 0],
+      [1517, 0],
+      [1518, 1],
+      [1520, 1],
+    ]);
+    expect(shape(visibleQueue(tree, new Set([1517, 1518])))).toHaveLength(5);
   });
 
   it("treats a dependency on a job that left the queue as a root", () => {
