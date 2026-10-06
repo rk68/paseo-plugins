@@ -116,9 +116,14 @@ export function buildPrGroups(
   gitParents: Map<number, number> = new Map(),
 ): PrGroup[] {
   const byNumber = new Map(prs.map((pr) => [pr.number, pr]));
-  const byHead = new Map(prs.map((pr) => [pr.headRefName, pr]));
-  const parentOf = (pr: GhPr) =>
-    byHead.get(pr.baseRefName) ?? byNumber.get(gitParents.get(pr.number) ?? -1);
+  // A fork's branch names belong to another repository, so only same-repository heads can be a base.
+  const byHead = new Map(
+    prs.filter((pr) => !pr.isCrossRepository).map((pr) => [pr.headRefName, pr]),
+  );
+  const parentOf = (pr: GhPr) => {
+    const parent = byHead.get(pr.baseRefName) ?? byNumber.get(gitParents.get(pr.number) ?? -1);
+    return parent && parent.number !== pr.number ? parent : undefined;
+  };
 
   const sorted = [...prs].sort((a, b) => a.number - b.number);
   const children = new Map<number, GhPr[]>();

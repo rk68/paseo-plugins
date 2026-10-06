@@ -95,7 +95,7 @@ export async function listJobs({
 }: RpcInput<typeof listJobsRpc>): Promise<JobList> {
   const output = await ssh(
     sshHost,
-    `squeue --me --json && echo ${SEPARATOR} && sacct -X -n -P -S now-24hours -o JobID,JobName,State,Elapsed,ExitCode,End`,
+    `squeue --me --json && echo ${SEPARATOR} && sacct -X -n -P -S now-24hours -o JobIDRaw,JobID,JobName,State,Elapsed,ExitCode,End`,
   );
   const [queueText, sacctText = ""] = output.split(SEPARATOR);
   const queue = parseSqueueJson(queueText, Math.floor(Date.now() / 1000));

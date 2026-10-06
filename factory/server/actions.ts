@@ -19,5 +19,8 @@ export async function startTaskFromPanel(
 ) {
   const [target, state] = await Promise.all([taskTarget(directory, number), settings.read()]);
   const extra = state.status === "ready" ? state.values.prompts[kind] : "";
-  return startTask(paseo, directory, kind, target, extra, "manual");
+  const started = await startTask(paseo, directory, kind, target, extra, "manual");
+  // Only automatic starts can be declined; a manual start always runs or reuses a task.
+  if (!started) throw new Error(`Could not start ${kind} for #${number}`);
+  return started;
 }

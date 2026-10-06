@@ -8,7 +8,18 @@ export interface TaskTarget {
   head: string;
   headOid: string;
   base: string;
+  /** The git remote that points at `repo`; not always `origin`. */
+  remote: string;
   failingChecks: { name: string; url: string | null }[];
+}
+
+/** Quotes a shell word: branch names may hold characters such as `;` that git accepts. */
+export function shellWord(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function remoteRef(target: TaskTarget, branch: string): string {
+  return shellWord(`${target.remote}/${branch}`);
 }
 
 const TASK_TITLE: Record<TaskKind, string> = {
@@ -29,14 +40,14 @@ function context(target: TaskTarget, problem: string): string {
 }
 
 function syncSteps(target: TaskTarget): string {
-  return `1. Run \`git fetch origin\`.
-2. Bring the local branch to the remote branch: \`git merge --ff-only origin/${target.head}\`. If this fails, stop and report that the local and remote branches diverged.`;
+  return `1. Run \`git fetch ${shellWord(target.remote)}\`.
+2. Bring the local branch to the remote branch: \`git merge --ff-only ${remoteRef(target, target.head)}\`. If this fails, stop and report that the local and remote branches diverged.`;
 }
 
 function finishSteps(target: TaskTarget, first: number, message: string): string {
   return `${first}. Run the fast checks that apply to the changed files, as the repository documents them (format, lint, tests).
 ${first + 1}. Commit ${message}.
-${first + 2}. Push: \`git push origin HEAD:refs/heads/${target.head}\`.`;
+${first + 2}. Push: \`git push ${shellWord(target.remote)} ${shellWord(`HEAD:refs/heads/${target.head}`)}\`.`;
 }
 
 const CONSTRAINTS = `## Constraints
@@ -51,8 +62,8 @@ ${context(target, `GitHub reports that \`${target.head}\` conflicts with \`${tar
 
 ## Steps
 ${syncSteps(target)}
-3. Merge the base branch: \`git merge origin/${target.base}\`.
-4. Resolve every conflict. Keep the intent of both sides. Read the PR (\`gh pr view ${target.number}\`) and the commits on both sides before you choose a resolution.
+3. Merge the base branch: \`git merge ${remoteRef(target, target.base)}\`.
+4. Resolve every conflict. Keep the intent of both sides. Read the PR (\`gh pr view ${target.number} --repo ${target.repo}\`) and the commits on both sides before you choose a resolution.
 ${finishSteps(target, 5, "the merge with the default merge message")}
 8. Report each conflicting file and how you resolved it.
 
@@ -71,7 +82,7 @@ ${checks}
 
 ## Steps
 ${syncSteps(target)}
-3. Read the failure output. For GitHub Actions, run \`gh pr checks ${target.number}\`, then \`gh run view <run-id> --log-failed\`. For other checks, open the details URL.
+3. Read the failure output. For GitHub Actions, run \`gh pr checks ${target.number} --repo ${target.repo}\`, then \`gh run view <run-id> --repo ${target.repo} --log-failed\`. For other checks, open the details URL.
 4. Find the root cause and fix the code. If the failure does not come from the code in this PR (a flaky test, an infrastructure fault, or a check that needs PR metadata such as a ticket link), do not change code. Report the cause instead.
 5. Run the failing check locally if the repository supports it.
 ${finishSteps(target, 6, "with a Conventional Commits message, for example `fix(ci): ...`")}
@@ -92,7 +103,7 @@ ${context(target, "The PR has unresolved review threads, or a reviewer requested
 ${syncSteps(target)}
 3. List the unresolved threads with their IDs:
    \`gh api graphql -f query='{ repository(owner:"${owner}", name:"${name}") { pullRequest(number:${target.number}) { reviewThreads(first:100) { nodes { id isResolved isOutdated path line comments(first:20) { nodes { author { login } body } } } } } } }'\`
-   Also read \`gh pr view ${target.number} --comments\` for review summaries.
+   Also read \`gh pr view ${target.number} --repo ${target.repo} --comments\` for review summaries.
 4. For each unresolved thread, decide if the comment is correct.
    - If it is correct, change the code.
    - If it is not correct, do not change the code. Reply with the reason: \`gh api graphql -f query='mutation($id:ID!,$body:String!){ addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id, body:$body}) { comment { id } } }' -f id=<thread-id> -f body='<reason>'\`.

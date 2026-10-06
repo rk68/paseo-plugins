@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assertSshHost,
+  expandOutputPath,
   fillLogPattern,
   logPattern,
   logTail,
@@ -54,10 +55,10 @@ describe("parseSqueueJson", () => {
 describe("parseSacct", () => {
   it("keeps finished jobs only, newest first, without the cancelling uid", () => {
     const text = [
-      "1338|smoke|COMPLETED|00:00:52|0:0|2026-10-02T16:38:44",
-      "1339|train-b|RUNNING|00:15:41|0:0|Unknown",
-      "1330|sweep|CANCELLED by 1001|00:03:00|0:15|2026-10-02T17:01:00",
-      "1331|sweep|FAILED|01:00:00|1:0|2026-10-02T09:00:00",
+      "1338|1338|smoke|COMPLETED|00:00:52|0:0|2026-10-02T16:38:44",
+      "1339|1339|train-b|RUNNING|00:15:41|0:0|Unknown",
+      "1330|1330|sweep|CANCELLED by 1001|00:03:00|0:15|2026-10-02T17:01:00",
+      "1331|1331|sweep|FAILED|01:00:00|1:0|2026-10-02T09:00:00",
       "",
     ].join("\n");
     expect(parseSacct(text, 2, (id) => id === 1338).map((j) => [j.id, j.state, j.hasLog])).toEqual([
@@ -67,7 +68,43 @@ describe("parseSacct", () => {
   });
 });
 
+describe("array jobs", () => {
+  it("keeps finished array tasks with their raw ID and display label", () => {
+    const text =
+      "1236|1234_0|sweep|COMPLETED|00:01:00|0:0|2026-10-02T10:00:00\n1237|1234_1|sweep|FAILED|00:02:00|1:0|2026-10-02T10:05:00";
+    expect(parseSacct(text, 5, () => false).map((j) => [j.id, j.label, j.state])).toEqual([
+      [1237, "1234_1", "FAILED"],
+      [1236, "1234_0", "COMPLETED"],
+    ]);
+  });
+});
+
+describe("output path placeholders", () => {
+  const job = {
+    job_id: 1339,
+    name: "train",
+    job_state: ["RUNNING"],
+    user_name: "me",
+    array_job_id: { set: true, number: 1330 },
+    array_task_id: { set: true, number: 9 },
+  };
+
+  it("expands the sbatch --output placeholders, including zero padding", () => {
+    expect(expandOutputPath("/logs/%x-%j.log", job)).toBe("/logs/train-1339.log");
+    expect(expandOutputPath("/home/%u/%A_%3a.out", job)).toBe("/home/me/1330_009.out");
+    expect(expandOutputPath("/logs/100%%.log", job)).toBe("/logs/100%.log");
+  });
+
+  it("refuses a placeholder it cannot resolve, so no wrong path is cached", () => {
+    expect(expandOutputPath("/logs/%N.log", job)).toBeNull();
+  });
+});
+
 describe("logTail", () => {
+  it("reads CRLF logs", () => {
+    expect(logTail("hello\r\nworld\r\n", 60)).toEqual(["hello", "world"]);
+  });
+
   it("shows the latest progress-bar frame and drops trailing blank lines", () => {
     expect(logTail("start\nepoch 1  10%\repoch 1  50%\repoch 1 100%\ndone\n\n", 2)).toEqual([
       "epoch 1 100%",

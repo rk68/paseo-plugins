@@ -3,6 +3,8 @@ import type { RpcInput } from "@getpaseo/plugin";
 import type { PrStack, prStackRpc } from "../shared/pr-stack";
 import { gh, repoInfo } from "./gh";
 import { findGitStack } from "./git-stack";
+import { reusableWorktree } from "./checkout";
+import { remoteFor } from "./remote";
 import { checkedOutBranch, relatedPrs, scopeGroups } from "./scope";
 import { findTasks, taskKey } from "./tasks";
 import { unresolvedThreads } from "./threads";
@@ -54,7 +56,9 @@ export async function listPrStack(
   const warnings: string[] = [];
   const [{ parents, uniqueCommits, trunkOid, warning }, tasks, threads, worktrees] =
     await Promise.all([
-      findGitStack(directory, prs, trunk),
+      remoteFor(directory, nameWithOwner).then((remote) =>
+        findGitStack(directory, prs, trunk, remote),
+      ),
       findTasks(paseo, nameWithOwner),
       unresolvedThreads(directory, nameWithOwner).catch((error: unknown) => {
         warnings.push(
@@ -67,13 +71,18 @@ export async function listPrStack(
   if (warning) warnings.push(warning);
   const branch = await checkedOutBranch(directory, trunk, trunkOid);
   const allGroups = buildPrGroups(prs, trunk, parents);
+  const crossRepository = new Set(prs.filter((pr) => pr.isCrossRepository).map((pr) => pr.number));
   const related = scope === "branch" && branch ? relatedPrs(prs, branch, uniqueCommits) : null;
   const fallback = related !== null && related.size === 0;
   const filtered = related !== null && !fallback;
   const groups = filtered ? scopeGroups(allGroups, related) : allGroups;
   for (const pr of groups.flatMap((group) => group.prs)) {
     pr.threads = threads.get(pr.number) ?? 0;
-    pr.worktree = worktrees.get(pr.head) ?? null;
+    pr.worktree =
+      reusableWorktree(worktrees, {
+        head: pr.head,
+        isCrossRepository: crossRepository.has(pr.number),
+      }) ?? null;
     const [latest] = tasks.get(taskKey(nameWithOwner, pr.number)) ?? [];
     pr.task = latest
       ? {

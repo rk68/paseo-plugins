@@ -18,6 +18,9 @@ interface SqueueJob {
   time_limit?: SlurmNumber;
   standard_output?: string;
   dependency?: string;
+  user_name?: string;
+  array_job_id?: SlurmNumber;
+  array_task_id?: SlurmNumber;
 }
 
 export interface ParsedQueue {
@@ -29,6 +32,33 @@ function setNumber(value: SlurmNumber | undefined): number | null {
   return value?.set && !value.infinite && typeof value.number === "number" ? value.number : null;
 }
 
+/**
+ * Expands the sbatch `--output` placeholders that some Slurm versions leave in `standard_output`.
+ * Returns null when a placeholder cannot be resolved, so no wrong path is cached.
+ */
+export function expandOutputPath(path: string, job: SqueueJob): string | null {
+  const arrayJob = setNumber(job.array_job_id);
+  const arrayTask = setNumber(job.array_task_id);
+  const values: Record<string, string | undefined> = {
+    "%": "%",
+    x: job.name,
+    j: String(job.job_id),
+    u: job.user_name,
+    A: arrayJob ? String(arrayJob) : String(job.job_id),
+    a: arrayTask === null ? undefined : String(arrayTask),
+  };
+  let unresolved = false;
+  const expanded = path.replace(/%(\d*)([%A-Za-z])/g, (_match, width: string, key: string) => {
+    const value = values[key];
+    if (value === undefined) {
+      unresolved = true;
+      return "";
+    }
+    return width && /^\d+$/.test(value) ? value.padStart(Number(width), "0") : value;
+  });
+  return unresolved ? null : expanded;
+}
+
 export function parseSqueueJson(text: string, nowSec: number): ParsedQueue {
   const { jobs } = JSON.parse(text) as { jobs: SqueueJob[] };
   const logPaths = new Map<number, string>();
@@ -36,7 +66,8 @@ export function parseSqueueJson(text: string, nowSec: number): ParsedQueue {
     const state = Array.isArray(job.job_state) ? (job.job_state[0] ?? "") : job.job_state;
     const start = setNumber(job.start_time);
     const limitMin = setNumber(job.time_limit);
-    if (job.standard_output) logPaths.set(job.job_id, job.standard_output);
+    const logPath = job.standard_output ? expandOutputPath(job.standard_output, job) : null;
+    if (logPath) logPaths.set(job.job_id, logPath);
     return {
       id: job.job_id,
       name: job.name,
@@ -49,7 +80,7 @@ export function parseSqueueJson(text: string, nowSec: number): ParsedQueue {
       limitSec: limitMin === null ? null : limitMin * 60,
       after: parseDependency(job.dependency ?? ""),
       lastLine: null,
-      hasLog: Boolean(job.standard_output),
+      hasLog: logPath !== null,
     };
   });
   const order = (job: { state: string }) => (job.state === "RUNNING" ? 0 : 1);
@@ -59,7 +90,10 @@ export function parseSqueueJson(text: string, nowSec: number): ParsedQueue {
 
 const ACTIVE_STATES = new Set(["RUNNING", "PENDING", "REQUEUED", "SUSPENDED"]);
 
-/** Parses `sacct -X -n -P -o JobID,JobName,State,Elapsed,ExitCode,End`, newest first. */
+/**
+ * Parses `sacct -X -n -P -o JobIDRaw,JobID,JobName,State,Elapsed,ExitCode,End`, newest first.
+ * JobIDRaw keeps array tasks such as `1234_0` numeric; JobID is their display label.
+ */
 export function parseSacct(
   text: string,
   limit: number,
@@ -68,9 +102,10 @@ export function parseSacct(
   return text
     .split("\n")
     .map((line) => line.split("|"))
-    .filter((fields) => fields.length >= 6 && /^\d+$/.test(fields[0]))
-    .map(([id, name, state, elapsed, exitCode, end]) => ({
+    .filter((fields) => fields.length >= 7 && /^\d+$/.test(fields[0]))
+    .map(([id, label, name, state, elapsed, exitCode, end]) => ({
       id: Number(id),
+      label,
       name,
       // "CANCELLED by 1234" carries the cancelling uid; the state alone is enough here.
       state: state.split(" ")[0],
@@ -112,7 +147,10 @@ export function fillLogPattern(pattern: string, name: string, id: number): strin
 
 /** Keeps the last carriage-return segment of each line, so progress bars show their latest frame. */
 export function logTail(text: string, count: number): string[] {
-  const lines = text.split("\n").map((line) => line.slice(line.lastIndexOf("\r") + 1));
+  const lines = text
+    .replaceAll("\r\n", "\n")
+    .split("\n")
+    .map((line) => line.slice(line.lastIndexOf("\r") + 1));
   while (lines.length && lines[lines.length - 1] === "") lines.pop();
   return lines.slice(-count);
 }

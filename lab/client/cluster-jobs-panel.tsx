@@ -268,7 +268,7 @@ function FinishedRow({
     >
       <Meta
         status={status}
-        detail={metaTail(timeAgo(job.end, now), `#${job.id}`)}
+        detail={metaTail(timeAgo(job.end, now), `#${job.label}`)}
         styles={row.styles}
       />
     </JobRow>

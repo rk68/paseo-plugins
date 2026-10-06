@@ -27,6 +27,8 @@ const QueuedJobSchema = z.object({
 
 const FinishedJobSchema = z.object({
   id: z.number(),
+  /** Slurm's display ID, such as `1234_0` for an array task. */
+  label: z.string(),
   name: z.string(),
   state: z.string(),
   elapsed: z.string(),

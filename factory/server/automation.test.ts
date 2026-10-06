@@ -121,15 +121,29 @@ describe("taskPrompt", () => {
     head: "feat/x",
     headOid: "o",
     base: "main",
+    remote: "upstream",
     failingChecks: [{ name: "test", url: "https://ci/1" }],
   };
 
   it("pushes to the PR branch without force in every task", () => {
     for (const kind of ["conflicts", "ci", "comments"] as const) {
       const prompt = taskPrompt(kind, target, "");
-      expect(prompt).toContain("git push origin HEAD:refs/heads/feat/x");
+      expect(prompt).toContain("git push 'upstream' 'HEAD:refs/heads/feat/x'");
       expect(prompt).toContain("Do not force-push");
     }
+  });
+
+  it("uses the remote and repository of the PR, not origin", () => {
+    const prompt = taskPrompt("conflicts", target, "");
+    expect(prompt).toContain("git merge 'upstream/main'");
+    expect(prompt).toContain("gh pr view 7 --repo o/r");
+    expect(prompt).not.toContain("origin");
+  });
+
+  it("quotes a branch name that holds shell syntax", () => {
+    const prompt = taskPrompt("ci", { ...target, head: "feat/x;printf${IFS}INJECTED;#" }, "");
+    expect(prompt).toContain("'HEAD:refs/heads/feat/x;printf${IFS}INJECTED;#'");
+    expect(prompt).toContain("git merge --ff-only 'upstream/feat/x;printf${IFS}INJECTED;#'");
   });
 
   it("names the failing checks and forbids weakening them", () => {

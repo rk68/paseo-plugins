@@ -1,12 +1,15 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { TASK_KINDS, type TaskKind } from "../shared/actions";
 import { gh, repoInfo } from "./gh";
+import { worktreeSource } from "./checkout";
+import { requireRemote } from "./remote";
 import { type GhCheck, toChecks } from "./stack";
 import { type TaskTarget, taskPrompt, taskTitle } from "./task-prompts";
 
 type PaseoApi = PluginHandlerContext["paseo"];
 
 const LABEL = {
+  repo: "factory.repo",
   pr: "factory.pr",
   kind: "factory.task",
   head: "factory.head",
@@ -19,6 +22,10 @@ const AGENT_CONFIG = {
   thinkingOptionId: "high",
 };
 const ACTIVE_STATUSES = new Set(["initializing", "running"]);
+const AGENT_PAGE_SIZE = 200;
+export const MAX_ACTIVE_TASKS_PER_REPO = 2;
+/** Caps automatic retries when each fix pushes a new head that fails the same way. */
+export const MAX_AUTO_ATTEMPTS_PER_TASK = 3;
 
 export type Trigger = "auto" | "manual";
 
@@ -45,73 +52,141 @@ function isTaskKind(value: string | undefined): value is TaskKind {
   return (TASK_KINDS as readonly string[]).includes(value ?? "");
 }
 
+export function activeTaskCount(tasks: Map<string, TaskAgent[]>): number {
+  return [...tasks.values()].flat().filter((task) => isActive(task)).length;
+}
+
+/**
+ * Whether an automatic task of `kind` may start on a PR, given its task history (archived agents
+ * included): one task per PR at a time, one attempt per kind and head commit, and a bounded
+ * number of automatic attempts per kind.
+ */
+export function mayStartAuto(history: TaskAgent[], kind: TaskKind, headOid: string): boolean {
+  if (history.some((task) => isActive(task))) return false;
+  if (history.some((task) => task.kind === kind && task.headOid === headOid)) return false;
+  const autoAttempts = history.filter((task) => task.kind === kind && task.trigger === "auto");
+  return autoAttempts.length < MAX_AUTO_ATTEMPTS_PER_TASK;
+}
+
 /** Every factory task agent for this repository's PRs, newest first, keyed by `taskKey`. */
 export async function findTasks(paseo: PaseoApi, repo: string): Promise<Map<string, TaskAgent[]>> {
-  const { entries } = await paseo.agents.list();
   const tasks = new Map<string, TaskAgent[]>();
-  for (const { agent } of entries) {
-    const labels = agent.labels ?? {};
-    const key = labels[LABEL.pr];
-    const kind = labels[LABEL.kind];
-    if (!key?.startsWith(`${repo}#`) || !isTaskKind(kind)) continue;
-    tasks.set(key, [
-      ...(tasks.get(key) ?? []),
-      {
-        agentId: agent.id,
-        workspaceId: agent.workspaceId ?? "",
-        status: agent.status,
-        kind,
-        headOid: labels[LABEL.head] ?? "",
-        trigger: labels[LABEL.trigger] === "auto" ? "auto" : "manual",
-        createdAt: agent.createdAt,
-      },
-    ]);
-  }
+  let cursor: string | undefined;
+  do {
+    const { entries, pageInfo } = await paseo.agents.list({
+      // Archived attempts still count towards the retry limits.
+      filter: { labels: { [LABEL.repo]: repo }, includeArchived: true },
+      page: { limit: AGENT_PAGE_SIZE, ...(cursor ? { cursor } : {}) },
+    });
+    for (const { agent } of entries) {
+      const labels = agent.labels ?? {};
+      const key = labels[LABEL.pr];
+      const kind = labels[LABEL.kind];
+      if (!key || !isTaskKind(kind)) continue;
+      tasks.set(key, [
+        ...(tasks.get(key) ?? []),
+        {
+          agentId: agent.id,
+          workspaceId: agent.workspaceId ?? "",
+          status: agent.status,
+          kind,
+          headOid: labels[LABEL.head] ?? "",
+          trigger: labels[LABEL.trigger] === "auto" ? "auto" : "manual",
+          createdAt: agent.createdAt,
+        },
+      ]);
+    }
+    cursor = pageInfo.hasMore ? (pageInfo.nextCursor ?? undefined) : undefined;
+  } while (cursor);
   for (const list of tasks.values()) list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return tasks;
 }
 
-export async function startTask(
+const repoLocks = new Map<string, Promise<unknown>>();
+
+/** Runs `work` after every earlier call for the same repository has settled. */
+export function withRepoLock<Result>(repo: string, work: () => Promise<Result>): Promise<Result> {
+  const previous = repoLocks.get(repo) ?? Promise.resolve();
+  const next = previous.then(work, work);
+  repoLocks.set(
+    repo,
+    next.catch(() => undefined),
+  );
+  return next;
+}
+
+export interface StartedTask {
+  agentId: string;
+  workspaceId: string;
+  reused: boolean;
+}
+
+/**
+ * Starts a task agent in a new worktree. The check for a running task and the creation share one
+ * per-repository lock, so concurrent manual and automatic starts cannot put two agents on one PR.
+ * Automatic starts also recheck their limits inside the lock and return null when one is reached.
+ */
+export function startTask(
   paseo: PaseoApi,
   directory: string,
   kind: TaskKind,
   target: TaskTarget,
   extraPrompt: string,
   trigger: Trigger,
-): Promise<{ agentId: string; workspaceId: string; reused: boolean }> {
-  const key = taskKey(target.repo, target.number);
-  // One task per PR: two agents pushing to the same branch would race.
-  const running = (await findTasks(paseo, target.repo)).get(key)?.find(isActive);
-  if (running) return { agentId: running.agentId, workspaceId: running.workspaceId, reused: true };
+): Promise<StartedTask | null> {
+  return withRepoLock(target.repo, async () => {
+    const key = taskKey(target.repo, target.number);
+    const tasks = await findTasks(paseo, target.repo);
+    const history = tasks.get(key) ?? [];
+    const running = history.find((task) => isActive(task));
+    if (running) {
+      return { agentId: running.agentId, workspaceId: running.workspaceId, reused: true };
+    }
+    if (
+      trigger === "auto" &&
+      (activeTaskCount(tasks) >= MAX_ACTIVE_TASKS_PER_REPO ||
+        !mayStartAuto(history, kind, target.headOid))
+    ) {
+      return null;
+    }
 
-  const workspace = await paseo.workspaces.create({
-    title: taskTitle(kind, target.number).replace("[Factory] ", ""),
-    source: { kind: "worktree", cwd: directory, action: "checkout", refName: target.head },
+    const workspace = await paseo.workspaces.create({
+      title: taskTitle(kind, target.number).replace("[Factory] ", ""),
+      source: worktreeSource(
+        directory,
+        { number: target.number, head: target.head, isCrossRepository: false },
+        target.remote,
+      ),
+    });
+    const agent = await workspace.agents.create({
+      config: AGENT_CONFIG,
+      title: taskTitle(kind, target.number),
+      prompt: taskPrompt(kind, target, extraPrompt),
+      labels: {
+        [LABEL.repo]: target.repo,
+        [LABEL.pr]: key,
+        [LABEL.kind]: kind,
+        [LABEL.head]: target.headOid,
+        [LABEL.trigger]: trigger,
+      },
+    });
+    return { agentId: agent.id, workspaceId: workspace.id, reused: false };
   });
-  const agent = await workspace.agents.create({
-    config: AGENT_CONFIG,
-    title: taskTitle(kind, target.number),
-    prompt: taskPrompt(kind, target, extraPrompt),
-    labels: {
-      [LABEL.pr]: key,
-      [LABEL.kind]: kind,
-      [LABEL.head]: target.headOid,
-      [LABEL.trigger]: trigger,
-    },
-  });
-  return { agentId: agent.id, workspaceId: workspace.id, reused: false };
 }
 
 export async function taskTarget(directory: string, number: number): Promise<TaskTarget> {
-  const [{ nameWithOwner }, view] = await Promise.all([
-    repoInfo(directory),
+  const { nameWithOwner } = await repoInfo(directory);
+  const [view, remote] = await Promise.all([
     gh(directory, [
       "pr",
       "view",
       String(number),
+      "--repo",
+      nameWithOwner,
       "--json",
       "title,url,headRefName,headRefOid,baseRefName,isCrossRepository,statusCheckRollup",
     ]),
+    requireRemote(directory, nameWithOwner),
   ]);
   const pr = JSON.parse(view) as {
     title: string;
@@ -131,6 +206,7 @@ export async function taskTarget(directory: string, number: number): Promise<Tas
     head: pr.headRefName,
     headOid: pr.headRefOid,
     base: pr.baseRefName,
+    remote,
     failingChecks: toChecks(pr.statusCheckRollup)
       .filter((check) => check.state === "fail")
       .map(({ name, url }) => ({ name, url })),

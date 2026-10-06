@@ -10,6 +10,7 @@ import {
 import { type ReactNode, useCallback, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { factorySettings, NO_AUTOMATION, TASK_KINDS, type TaskKind } from "../shared/actions";
+import { type DraftFields, mergeDraft } from "../shared/settings-draft";
 import { usePanel } from "./panel-context";
 
 type Ready = Extract<SettingsState<typeof factorySettings.schema>, { status: "ready" }>;
@@ -63,6 +64,12 @@ function AutomationForm({ settings }: { settings: Ready }) {
   const enabled = settings.values.automation[projectRoot] ?? NO_AUTOMATION;
   const [prompts, setPrompts] = useState(settings.values.prompts);
   const [ignored, setIgnored] = useState(settings.values.ignoredChecks.join(", "));
+  // What the drafts started from, so a save can tell its own edits from other clients' changes.
+  const [baseline, setBaseline] = useState<DraftFields>(() => ({
+    prompts: settings.values.prompts,
+    ignoredChecks: settings.values.ignoredChecks,
+  }));
+  const [conflict, setConflict] = useState<string | null>(null);
 
   const setAutomation = useCallback(
     (kind: TaskKind, value: boolean) => {
@@ -74,13 +81,24 @@ function AutomationForm({ settings }: { settings: Ready }) {
     },
     [settings, projectRoot, enabled],
   );
-  const saveInstructions = useCallback(() => {
-    const ignoredChecks = ignored
-      .split(",")
-      .map((name) => name.trim())
-      .filter(Boolean);
-    void settings.save({ ...settings.values, prompts, ignoredChecks }, settings.revision);
-  }, [settings, prompts, ignored]);
+  const saveInstructions = useCallback(async () => {
+    const draft = {
+      prompts,
+      ignoredChecks: ignored
+        .split(",")
+        .map((name) => name.trim())
+        .filter(Boolean),
+    };
+    const merged = mergeDraft(settings.values, baseline, draft);
+    if ("conflicts" in merged) {
+      setConflict(
+        "Another window changed these instructions. Close and reopen this view to see them",
+      );
+      return;
+    }
+    setConflict(null);
+    if (await settings.save(merged.values, settings.revision)) setBaseline(draft);
+  }, [settings, prompts, ignored, baseline]);
   const setPrompt = useCallback(
     (kind: TaskKind, text: string) => setPrompts((current) => ({ ...current, [kind]: text })),
     [],
@@ -128,6 +146,7 @@ function AutomationForm({ settings }: { settings: Ready }) {
           />
         </SettingsCard>
       </SettingsSection>
+      {conflict ? <Text style={styles.errorBlock}>{conflict}</Text> : null}
       {settings.saveError ? <Text style={styles.errorBlock}>{settings.saveError}</Text> : null}
     </>
   );

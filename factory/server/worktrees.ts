@@ -28,8 +28,8 @@ export async function listWorktrees(directory: string): Promise<Map<string, stri
 }
 
 /** Brings a clean worktree up to the remote branch; leaves local changes and diverged branches alone. */
-export async function fastForward(path: string, branch: string): Promise<void> {
+export async function fastForward(path: string, branch: string, remote: string): Promise<void> {
   if ((await git(path, ["status", "--porcelain"])).trim()) return;
-  await git(path, ["fetch", "--quiet", "origin", branch], 60_000);
-  await git(path, ["merge", "--ff-only", "--quiet", `origin/${branch}`]).catch(() => undefined);
+  await git(path, ["fetch", "--quiet", remote, branch], 60_000);
+  await git(path, ["merge", "--ff-only", "--quiet", `${remote}/${branch}`]).catch(() => undefined);
 }

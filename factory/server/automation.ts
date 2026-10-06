@@ -10,16 +10,22 @@ import { repoInfo } from "./gh";
 import { listOpenPrs } from "./pr-stack";
 import { type GhPr, toChecks } from "./stack";
 import type { TaskTarget } from "./task-prompts";
-import { findTasks, isActive, startTask, type TaskAgent, taskKey } from "./tasks";
+import { remoteFor } from "./remote";
+import {
+  activeTaskCount,
+  findTasks,
+  MAX_ACTIVE_TASKS_PER_REPO,
+  mayStartAuto,
+  startTask,
+  type TaskAgent,
+  taskKey,
+} from "./tasks";
 import { unresolvedThreads } from "./threads";
 
 type PaseoApi = PluginHandlerContext["paseo"];
 type Settings = PluginSettings<typeof factorySettings.schema>;
 
 const POLL_MS = 5 * 60_000;
-const MAX_ACTIVE_TASKS_PER_REPO = 2;
-/** Caps automatic retries when each fix pushes a new head that fails the same way. */
-const MAX_AUTO_ATTEMPTS_PER_TASK = 3;
 
 export interface PrState {
   pr: GhPr;
@@ -61,22 +67,18 @@ export function nextTasks(
   ignored: ReadonlySet<string>,
   attempted: ReadonlySet<string>,
 ): { state: PrState; kind: TaskKind }[] {
-  let slots =
-    MAX_ACTIVE_TASKS_PER_REPO - [...tasks.values()].flat().filter((task) => isActive(task)).length;
+  let slots = MAX_ACTIVE_TASKS_PER_REPO - activeTaskCount(tasks);
   const picked: { state: PrState; kind: TaskKind }[] = [];
   for (const state of [...states].sort((a, b) => a.pr.number - b.pr.number)) {
     if (slots <= 0) break;
     if (state.pr.isCrossRepository) continue;
     const key = taskKey(repo, state.pr.number);
     const history = tasks.get(key) ?? [];
-    if (history.some((task) => isActive(task))) continue;
     const kind = TASK_KINDS.find(
       (candidate) =>
         enabled[candidate] &&
         needs(candidate, state, ignored) &&
-        !history.some((t) => t.kind === candidate && t.headOid === state.pr.headRefOid) &&
-        history.filter((t) => t.kind === candidate && t.trigger === "auto").length <
-          MAX_AUTO_ATTEMPTS_PER_TASK &&
+        mayStartAuto(history, candidate, state.pr.headRefOid) &&
         !attempted.has(`${key}:${candidate}@${state.pr.headRefOid}`),
     );
     if (!kind) continue;
@@ -86,7 +88,12 @@ export function nextTasks(
   return picked;
 }
 
-export function targetFromPr(repo: string, pr: GhPr, ignored: ReadonlySet<string>): TaskTarget {
+export function targetFromPr(
+  repo: string,
+  remote: string,
+  pr: GhPr,
+  ignored: ReadonlySet<string>,
+): TaskTarget {
   return {
     repo,
     number: pr.number,
@@ -95,6 +102,7 @@ export function targetFromPr(repo: string, pr: GhPr, ignored: ReadonlySet<string
     head: pr.headRefName,
     headOid: pr.headRefOid,
     base: pr.baseRefName,
+    remote,
     failingChecks: failingChecks(pr, ignored).failing.map(({ name, url }) => ({ name, url })),
   };
 }
@@ -128,6 +136,8 @@ export function createAutomation(
       ? await unresolvedThreads(directory, nameWithOwner)
       : new Map<number, number>();
     const states = prs.map((pr) => ({ pr, threads: threads.get(pr.number) ?? 0 }));
+    const remote = await remoteFor(directory, nameWithOwner);
+    if (!remote) throw new Error(`no git remote points to ${nameWithOwner}`);
     const tasks = await findTasks(api, nameWithOwner);
     for (const { state, kind } of nextTasks(
       states,
@@ -139,9 +149,11 @@ export function createAutomation(
     )) {
       const key = taskKey(nameWithOwner, state.pr.number);
       attempted.add(`${key}:${kind}@${state.pr.headRefOid}`);
-      const target = targetFromPr(nameWithOwner, state.pr, ignored);
+      const target = targetFromPr(nameWithOwner, remote, state.pr, ignored);
       const started = await startTask(api, directory, kind, target, prompts[kind], "auto");
-      log(`Automation started ${kind} agent ${started.agentId} for ${key}`);
+      if (started && !started.reused) {
+        log(`Automation started ${kind} agent ${started.agentId} for ${key}`);
+      }
     }
   }
 

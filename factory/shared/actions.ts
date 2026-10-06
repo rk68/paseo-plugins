@@ -22,18 +22,13 @@ export const factorySettings = defineSettings({
     ignoredChecks: z.array(z.string()).default([]),
     sort: z.enum(["urgency", "newest"]).default("urgency"),
   }),
-  migrate(values, fromVersion) {
-    if (fromVersion !== 1) return values;
-    const { autoResolveDirectories = [] } = values as { autoResolveDirectories?: string[] };
-    return {
-      automation: Object.fromEntries(
-        autoResolveDirectories.map((dir) => [dir, { conflicts: true, ci: false, comments: false }]),
-      ),
-    };
-  },
+  // Version 1 keyed auto-resolve by workspace folder, which can be a worktree the UI no longer
+  // shows; an automation that cannot be turned off is worse than one that is off.
+  migrate: (values, fromVersion) => (fromVersion === 1 ? {} : values),
 });
 
 export type Automation = z.infer<typeof AutomationSchema>;
+export type FactorySettings = z.infer<typeof factorySettings.schema>;
 export const NO_AUTOMATION: Automation = { conflicts: false, ci: false, comments: false };
 
 const PrTargetSchema = z.object({ directory: z.string(), number: z.number().int().positive() });

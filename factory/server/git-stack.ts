@@ -10,7 +10,7 @@ export interface GitStack {
   parents: Map<number, number>;
   /** Each PR's commits that are not on trunk. */
   uniqueCommits: Map<number, Set<string>>;
-  /** `origin/<trunk>`, or null when the ref is missing locally. */
+  /** `<remote>/<trunk>`, or null when the ref is missing locally. */
   trunkOid: string | null;
   warning: string | null;
 }
@@ -51,8 +51,17 @@ export async function findGitStack(
   directory: string,
   prs: StackPrInput[],
   trunk: string,
+  remote: string | null,
 ): Promise<GitStack> {
-  const trunkRef = `origin/${trunk}`;
+  if (!remote) {
+    return {
+      parents: new Map(),
+      uniqueCommits: new Map(),
+      trunkOid: null,
+      warning: "No git remote points to this repository, so stacks use PR bases only.",
+    };
+  }
+  const trunkRef = `${remote}/${trunk}`;
   const trunkOid =
     (await git(directory, ["rev-parse", "--verify", "-q", trunkRef]).catch(() => "")).trim() ||
     null;
@@ -78,7 +87,7 @@ export async function findGitStack(
     // Fetching into FETCH_HEAD only adds objects; no local branch or ref changes.
     await git(
       directory,
-      ["fetch", "--no-tags", "--quiet", "origin", ...missing.map((pr) => `pull/${pr.number}/head`)],
+      ["fetch", "--no-tags", "--quiet", remote, ...missing.map((pr) => `pull/${pr.number}/head`)],
       60_000,
     ).catch(() => {
       warning = `Could not fetch ${missing.length} PR branch(es); their stacks may be missing.`;

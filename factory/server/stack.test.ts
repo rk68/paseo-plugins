@@ -184,3 +184,21 @@ describe("parseWorktrees", () => {
     ]);
   });
 });
+
+describe("fork PRs", () => {
+  it("never make a same-repository PR a stack child through a shared branch name", () => {
+    const groups = buildPrGroups(
+      [pr(1, "main", "main", { isCrossRepository: true }), pr(2, "feature", "main")],
+      "main",
+    );
+    expect(summary(groups)).toEqual([
+      {
+        kind: "independent",
+        prs: [
+          [1, 0, null],
+          [2, 0, null],
+        ],
+      },
+    ]);
+  });
+});
