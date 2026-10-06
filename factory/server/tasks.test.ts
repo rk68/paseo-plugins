@@ -1,7 +1,11 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { describe, expect, it } from "vitest";
 import type { TaskTarget } from "./task-prompts";
-import { findTasks, startTask } from "./tasks";
+import { findTasks, startTask as startWithFetch } from "./tasks";
+
+const noFetch = async () => "h7";
+const startTask = (...args: Parameters<typeof startWithFetch>) =>
+  startWithFetch(args[0], args[1], args[2], args[3], args[4], args[5], noFetch);
 
 type PaseoApi = PluginHandlerContext["paseo"];
 

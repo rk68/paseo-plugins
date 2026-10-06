@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type Automation, NO_AUTOMATION, type TaskKind } from "../shared/actions";
-import { nextTasks, type PrState } from "./automation";
+import { nextTasks, type PrState, runAttempt } from "./automation";
 import type { GhPr } from "./stack";
 import { taskPrompt } from "./task-prompts";
 import type { TaskAgent, Trigger } from "./tasks";
@@ -157,5 +157,17 @@ describe("taskPrompt", () => {
       /## Extra instructions from the user\nSkip nitpicks$/,
     );
     expect(taskPrompt("comments", target, " ")).not.toContain("Extra instructions");
+  });
+});
+
+describe("runAttempt", () => {
+  it("records started and failed attempts but not a start declined for capacity", async () => {
+    const attempted = new Set<string>();
+    await runAttempt(attempted, "declined", async () => null);
+    await runAttempt(attempted, "started", async () => ({ agentId: "a" }));
+    await runAttempt(attempted, "failed", async () => {
+      throw new Error("boom");
+    }).catch(() => undefined);
+    expect([...attempted]).toEqual(["started", "failed"]);
   });
 });

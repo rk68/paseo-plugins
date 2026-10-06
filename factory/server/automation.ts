@@ -6,7 +6,7 @@ import {
   TASK_KINDS,
   type TaskKind,
 } from "../shared/actions";
-import { repoInfo } from "./gh";
+import { mainCheckout, repoInfo } from "./gh";
 import { listOpenPrs } from "./pr-stack";
 import { type GhPr, toChecks } from "./stack";
 import type { TaskTarget } from "./task-prompts";
@@ -107,6 +107,25 @@ export function targetFromPr(
   };
 }
 
+/**
+ * Records an automatic attempt once it ran or failed. A start declined for capacity is not an
+ * attempt, so a later tick tries it again.
+ */
+export async function runAttempt<Result>(
+  attempted: Set<string>,
+  attempt: string,
+  start: () => Promise<Result | null>,
+): Promise<Result | null> {
+  try {
+    const started = await start();
+    if (started !== null) attempted.add(attempt);
+    return started;
+  } catch (error) {
+    attempted.add(attempt);
+    throw error;
+  }
+}
+
 export interface AutomationRunner {
   /** The plugin's daemon session only reaches handlers and hooks, so the watcher borrows it from them. */
   attach(paseo: PaseoApi): void;
@@ -148,9 +167,10 @@ export function createAutomation(
       attempted,
     )) {
       const key = taskKey(nameWithOwner, state.pr.number);
-      attempted.add(`${key}:${kind}@${state.pr.headRefOid}`);
       const target = targetFromPr(nameWithOwner, remote, state.pr, ignored);
-      const started = await startTask(api, directory, kind, target, prompts[kind], "auto");
+      const started = await runAttempt(attempted, `${key}:${kind}@${state.pr.headRefOid}`, () =>
+        startTask(api, directory, kind, target, prompts[kind], "auto"),
+      );
       if (started && !started.reused) {
         log(`Automation started ${kind} agent ${started.agentId} for ${key}`);
       }
@@ -167,6 +187,11 @@ export function createAutomation(
       const ignored = new Set(ignoredChecks);
       for (const [directory, enabled] of Object.entries(automation)) {
         if (!TASK_KINDS.some((kind) => (enabled ?? NO_AUTOMATION)[kind])) continue;
+        // The UI keys automation by project root; a worktree key from an older version is inert.
+        if ((await mainCheckout(directory)) !== directory) {
+          log(`Automation ignores ${directory}: not a project's main checkout`);
+          continue;
+        }
         await runDirectory(paseo, directory, enabled, prompts, ignored).catch((error: unknown) =>
           log(`Automation skipped ${directory}: ${error instanceof Error ? error.message : error}`),
         );

@@ -132,7 +132,9 @@ export async function readJobLog({
   const known = logs.paths.get(jobId);
   const candidates = known
     ? [known]
-    : patternsFor(logs, configured).map((pattern) => fillLogPattern(pattern, name, jobId));
+    : patternsFor(logs, configured)
+        .map((pattern) => fillLogPattern(pattern, name, jobId))
+        .filter((path): path is string => path !== null);
   if (!candidates.length) throw new Error(`No log path known for job ${jobId}`);
   // Prints the first candidate that exists, then its tail; exits with a marker code when none exist.
   const script = `for f in ${candidates.map(remotePath).join(" ")}; do if [ -f "$f" ]; then printf '%s\\n' "$f"; tail -c 65536 -- "$f"; exit 0; fi; done; exit ${LOG_NOT_FOUND_EXIT}`;

@@ -80,6 +80,7 @@ export async function listPrStack(
     pr.threads = threads.get(pr.number) ?? 0;
     pr.worktree =
       reusableWorktree(worktrees, {
+        number: pr.number,
         head: pr.head,
         isCrossRepository: crossRepository.has(pr.number),
       }) ?? null;

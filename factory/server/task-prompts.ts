@@ -36,7 +36,7 @@ function context(target: TaskTarget, problem: string): string {
   return `## Context
 - Repository: ${target.repo}. Pull request: ${target.url} ("${target.title}").
 - ${problem}
-- This worktree was created for this task from \`${target.head}\`. Its local branch name can be different from \`${target.head}\`.`;
+- This worktree is on a new local branch that starts at the PR head fetched from the remote \`${target.remote}\`. Push to the PR branch with the command below, not to the local branch name.`;
 }
 
 function syncSteps(target: TaskTarget): string {

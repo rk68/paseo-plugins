@@ -20,4 +20,12 @@ describe("remotes", () => {
     expect(pickRemote(remotes, "me/repo")).toBe("origin");
     expect(pickRemote(remotes, "other/repo")).toBeNull();
   });
+
+  it("rejects a remote whose push URL points at another repository", () => {
+    const remotes = [
+      "review\thttps://github.com/o/r.git (fetch)",
+      "review\thttps://github.com/other/r.git (push)",
+    ].join("\n");
+    expect(pickRemote(remotes, "o/r")).toBeNull();
+  });
 });

@@ -27,6 +27,7 @@ import {
   type Tone,
   waitStatus,
 } from "../shared/format";
+import { mergeEdited } from "../shared/settings-draft";
 import { Spinner } from "./spinner";
 
 type Theme = PluginWorkspacePanelProps["theme"];
@@ -78,10 +79,16 @@ export function ClusterJobsPanel({ theme }: PluginWorkspacePanelProps) {
 function HostForm({ settings, onDone }: { settings: ReadySettings; onDone(): void }) {
   const [host, setHost] = useState(settings.values.sshHost);
   const [pattern, setPattern] = useState(settings.values.logPattern);
+  // What the drafts started from, so a save can tell its own edits from other clients' changes.
+  const [baseline] = useState(() => settings.values);
+  const [conflict, setConflict] = useState(false);
   const save = useCallback(async () => {
-    const values = { sshHost: host.trim(), logPattern: pattern.trim() };
-    if (await settings.save(values, settings.revision)) onDone();
-  }, [settings, host, pattern, onDone]);
+    const draft = { sshHost: host.trim(), logPattern: pattern.trim() };
+    const merged = mergeEdited(settings.values, baseline, draft);
+    setConflict("conflicts" in merged);
+    if ("conflicts" in merged) return;
+    if (await settings.save(merged.values, settings.revision)) onDone();
+  }, [settings, host, pattern, baseline, onDone]);
   return (
     <SettingsCard>
       <SettingsInput
@@ -91,7 +98,11 @@ function HostForm({ settings, onDone }: { settings: ReadySettings; onDone(): voi
         placeholder="my-cluster"
         onChangeText={setHost}
         disabled={settings.saving}
-        error={settings.saveError}
+        error={
+          conflict
+            ? "Another window changed these settings. Close and reopen this form to see them"
+            : settings.saveError
+        }
       />
       <SettingsInput
         label="Log path pattern"

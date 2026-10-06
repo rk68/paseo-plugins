@@ -2,8 +2,8 @@ import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { openBranchRpc } from "../shared/actions";
 import { gh, repoInfo } from "./gh";
-import { reusableWorktree, worktreeSource } from "./checkout";
-import { remoteFor } from "./remote";
+import { ensureLocalBranch, fetchPrHead, remotePrRef, reusableWorktree } from "./checkout";
+import { requireRemote } from "./remote";
 import { fastForward, listWorktrees } from "./worktrees";
 
 type PaseoApi = PluginHandlerContext["paseo"];
@@ -29,17 +29,23 @@ export async function openBranch(
   const target = { number, head: pr.headRefName, isCrossRepository: pr.isCrossRepository };
   const [worktrees, remote] = await Promise.all([
     listWorktrees(directory),
-    pr.isCrossRepository ? null : remoteFor(directory, nameWithOwner),
+    requireRemote(directory, nameWithOwner),
   ]);
+  await fetchPrHead(directory, remote, target);
   const existing = reusableWorktree(worktrees, target);
   const workspace = existing
     ? await paseo.workspaces.open({ cwd: existing })
     : await paseo.workspaces.create({
         title: `#${number} ${pr.title}`,
-        source: worktreeSource(directory, target, remote),
+        source: {
+          kind: "worktree",
+          cwd: directory,
+          action: "checkout",
+          refName: await ensureLocalBranch(directory, remote, target),
+        },
       });
 
   const path = existing ?? workspace.directory;
-  if (path && remote) await fastForward(path, pr.headRefName, remote).catch(() => undefined);
+  if (path) await fastForward(path, remotePrRef(remote, target)).catch(() => undefined);
   return { workspaceId: workspace.id, created: !existing };
 }

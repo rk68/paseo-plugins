@@ -1,7 +1,7 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { TASK_KINDS, type TaskKind } from "../shared/actions";
 import { gh, repoInfo } from "./gh";
-import { worktreeSource } from "./checkout";
+import { fetchPrHead, remotePrRef } from "./checkout";
 import { requireRemote } from "./remote";
 import { type GhCheck, toChecks } from "./stack";
 import { type TaskTarget, taskPrompt, taskTitle } from "./task-prompts";
@@ -133,6 +133,7 @@ export function startTask(
   target: TaskTarget,
   extraPrompt: string,
   trigger: Trigger,
+  fetchHead: typeof fetchPrHead = fetchPrHead,
 ): Promise<StartedTask | null> {
   return withRepoLock(target.repo, async () => {
     const key = taskKey(target.repo, target.number);
@@ -150,13 +151,19 @@ export function startTask(
       return null;
     }
 
+    // A new branch from the fetched PR head: the user's local branch may hold unpushed commits
+    // that a task must never publish, and it is never moved.
+    const pr = { number: target.number, head: target.head, isCrossRepository: false };
+    await fetchHead(directory, target.remote, pr);
     const workspace = await paseo.workspaces.create({
       title: taskTitle(kind, target.number).replace("[Factory] ", ""),
-      source: worktreeSource(
-        directory,
-        { number: target.number, head: target.head, isCrossRepository: false },
-        target.remote,
-      ),
+      source: {
+        kind: "worktree",
+        cwd: directory,
+        action: "branch-off",
+        refName: remotePrRef(target.remote, pr),
+        branchName: `factory/pr-${target.number}-${kind}-${Date.now().toString(36)}`,
+      },
     });
     const agent = await workspace.agents.create({
       config: AGENT_CONFIG,

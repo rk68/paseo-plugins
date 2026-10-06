@@ -141,8 +141,9 @@ export function logPattern(path: string, name: string, id: number): string | nul
   return path.replaceAll(String(id), "%j").replaceAll(name, "%x");
 }
 
-export function fillLogPattern(pattern: string, name: string, id: number): string {
-  return pattern.replaceAll("%x", name).replaceAll("%j", String(id));
+/** Fills a `--output` pattern for a finished job; null when it needs data sacct does not give. */
+export function fillLogPattern(pattern: string, name: string, id: number): string | null {
+  return expandOutputPath(pattern, { job_id: id, name, job_state: [] });
 }
 
 /** Keeps the last carriage-return segment of each line, so progress bars show their latest frame. */

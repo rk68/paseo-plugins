@@ -52,6 +52,12 @@ describe("relatedPrs", () => {
     expect([...relatedPrs(prs, local, unique)]).toEqual([1, 2]);
   });
 
+  it("ignores a fork PR that only shares the branch name", () => {
+    const fork = { ...gh(5, "feat/a", "main", "fork-commit"), isCrossRepository: true };
+    const local = branch("feat/a", "local-commit", ["local-commit"]);
+    expect([...relatedPrs([fork], local, new Map([[5, new Set(["fork-commit"])]]))]).toEqual([]);
+  });
+
   it("returns nothing for an unrelated branch", () => {
     expect(relatedPrs(prs, branch("solo", "oid-solo", ["oid-solo"]), unique).size).toBe(0);
   });

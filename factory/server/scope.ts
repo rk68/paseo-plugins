@@ -34,7 +34,8 @@ export function relatedPrs(
 ): Set<number> {
   const related = new Set<number>();
   for (const pr of prs) {
-    const own = pr.headRefName === branch.name;
+    // A fork's branch name lives in another repository and says nothing about this branch.
+    const own = !pr.isCrossRepository && pr.headRefName === branch.name;
     const above = pr.baseRefName === branch.name || uniqueCommits.get(pr.number)?.has(branch.oid);
     const below = branch.commits.has(pr.headRefOid);
     if (own || above || below) related.add(pr.number);

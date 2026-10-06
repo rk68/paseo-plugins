@@ -1,28 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { reusableWorktree, worktreeSource } from "./checkout";
+import { localBranchFor, remotePrRef, reusableWorktree } from "./checkout";
 
-describe("worktreeSource", () => {
-  const pr = { number: 7, head: "feat", isCrossRepository: false };
+const own = { number: 7, head: "main", isCrossRepository: false };
+const fork = { number: 7, head: "main", isCrossRepository: true };
 
-  it("checks out by branch only for same-repository PRs on origin", () => {
-    expect(worktreeSource("/repo", pr, "origin")).toMatchObject({ refName: "feat" });
-  });
-
-  it("checks out through the PR for forks and for other remotes", () => {
-    const viaPr = { checkoutSource: { kind: "change_request", forge: "github", number: 7 } };
-    expect(worktreeSource("/repo", { ...pr, isCrossRepository: true }, "origin")).toMatchObject(
-      viaPr,
-    );
-    expect(worktreeSource("/repo", pr, "upstream")).toMatchObject(viaPr);
-    expect(worktreeSource("/repo", pr, null)).toMatchObject(viaPr);
+describe("PR refs", () => {
+  it("keeps fork heads apart from same-named local branches", () => {
+    expect(localBranchFor(own)).toBe("main");
+    expect(localBranchFor(fork)).toBe("pr/7");
+    expect(remotePrRef("work", own)).toBe("refs/remotes/work/main");
+    expect(remotePrRef("work", fork)).toBe("refs/remotes/work/pr/7");
   });
 });
 
 describe("reusableWorktree", () => {
-  const worktrees = new Map([["main", "/repo"]]);
+  const worktrees = new Map([
+    ["main", "/repo"],
+    ["pr/9", "/wt/pr-9"],
+  ]);
 
   it("never reuses a local worktree for a fork PR with the same branch name", () => {
-    expect(reusableWorktree(worktrees, { head: "main", isCrossRepository: true })).toBeUndefined();
-    expect(reusableWorktree(worktrees, { head: "main", isCrossRepository: false })).toBe("/repo");
+    expect(reusableWorktree(worktrees, fork)).toBeUndefined();
+    expect(reusableWorktree(worktrees, own)).toBe("/repo");
+    expect(reusableWorktree(worktrees, { ...fork, number: 9 })).toBe("/wt/pr-9");
   });
 });

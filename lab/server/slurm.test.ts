@@ -146,6 +146,11 @@ describe("log patterns", () => {
     expect(fillLogPattern(pattern ?? "", "smoke", 1338)).toBe("/home/user/logs/smoke-1338.log");
   });
 
+  it("expands every placeholder of a configured pattern, including zero padding", () => {
+    expect(fillLogPattern("/logs/%x-%05j.log", "train", 1339)).toBe("/logs/train-01339.log");
+    expect(fillLogPattern("/logs/%N.log", "train", 1339)).toBeNull();
+  });
+
   it("learns nothing from a path without the job id", () => {
     expect(logPattern("/home/r/slurm.out", "x", 5)).toBeNull();
   });

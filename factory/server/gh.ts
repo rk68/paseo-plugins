@@ -7,7 +7,7 @@ const run = promisify(execFile);
 const mainCheckouts = new Map<string, string>();
 
 /** The repository's main checkout, which every worktree of it shares remotes with. */
-async function mainCheckout(directory: string): Promise<string> {
+export async function mainCheckout(directory: string): Promise<string> {
   const known = mainCheckouts.get(directory);
   if (known) return known;
   const commonDir = await git(directory, [

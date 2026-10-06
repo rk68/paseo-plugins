@@ -6,15 +6,27 @@ export function repoFromUrl(url: string): string | null {
   return match ? `${match[1]}/${match[2]}`.toLowerCase() : null;
 }
 
-/** The remote that points at `repo`, preferring `origin` when several do. */
+/**
+ * The remote whose fetch and push URLs both point at `repo`, preferring `origin`. A remote with a
+ * push URL elsewhere is rejected, because agents push through it.
+ */
 export function pickRemote(remoteVerbose: string, repo: string): string | null {
-  const names = new Set<string>();
+  const urls = new Map<string, { fetch: string[]; push: string[] }>();
   for (const line of remoteVerbose.split("\n")) {
     const [name, url, kind] = line.trim().split(/\s+/);
-    if (kind === "(fetch)" && url && repoFromUrl(url) === repo.toLowerCase()) names.add(name);
+    if (!name || !url) continue;
+    const entry = urls.get(name) ?? { fetch: [], push: [] };
+    if (kind === "(fetch)") entry.fetch.push(url);
+    if (kind === "(push)") entry.push.push(url);
+    urls.set(name, entry);
   }
-  if (names.has("origin")) return "origin";
-  return names.values().next().value ?? null;
+  const target = repo.toLowerCase();
+  const matches = (list: string[]) =>
+    list.length > 0 && list.every((url) => repoFromUrl(url) === target);
+  const names = [...urls]
+    .filter(([, entry]) => matches(entry.fetch) && matches(entry.push))
+    .map(([name]) => name);
+  return names.includes("origin") ? "origin" : (names[0] ?? null);
 }
 
 export async function remoteFor(directory: string, repo: string): Promise<string | null> {
