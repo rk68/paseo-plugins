@@ -63,7 +63,8 @@ describe("orderGroups", () => {
 describe("age", () => {
   it("reads how long ago a PR was opened", () => {
     const now = Date.parse("2026-03-10T12:00:00Z");
-    expect(age("2026-03-10T11:30:00Z", now)).toBe("opened just now");
+    expect(age("2026-03-10T11:59:40Z", now)).toBe("opened just now");
+    expect(age("2026-03-10T11:40:00Z", now)).toBe("opened 20m ago");
     expect(age("2026-03-09T12:00:00Z", now)).toBe("opened 24h ago");
     expect(age("2026-03-01T12:00:00Z", now)).toBe("opened 9d ago");
   });

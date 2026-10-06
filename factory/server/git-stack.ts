@@ -1,29 +1,21 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { type GhPr, gitStackParents } from "./stack";
-
-const run = promisify(execFile);
+import { git } from "./worktrees";
 
 const MAX_PARALLEL_GIT = 8;
 const MAX_BRANCH_COMMITS = "500";
 
 interface StackPrInput extends Pick<GhPr, "number" | "headRefOid"> {}
 
-interface CachedParents {
-  key: string;
+export interface GitStack {
   parents: Map<number, number>;
+  /** Each PR's commits that are not on trunk. */
+  uniqueCommits: Map<number, Set<string>>;
+  /** `origin/<trunk>`, or null when the ref is missing locally. */
+  trunkOid: string | null;
+  warning: string | null;
 }
 
-const cacheByDirectory = new Map<string, CachedParents>();
-
-function git(directory: string, args: string[], timeout = 20_000): Promise<string> {
-  return run("git", args, {
-    cwd: directory,
-    env: { ...process.env, PWD: directory, GIT_TERMINAL_PROMPT: "0" },
-    timeout,
-    maxBuffer: 16 << 20,
-  }).then(({ stdout }) => stdout);
-}
+const cacheByDirectory = new Map<string, { key: string; stack: GitStack }>();
 
 async function mapLimit<Item, Result>(
   items: Item[],
@@ -44,26 +36,38 @@ async function hasCommit(directory: string, oid: string): Promise<boolean> {
   );
 }
 
+export async function commitsNotOn(directory: string, ref: string, trunkOid: string) {
+  const list = await git(directory, [
+    "rev-list",
+    `--max-count=${MAX_BRANCH_COMMITS}`,
+    ref,
+    `^${trunkOid}`,
+  ]).catch(() => "");
+  return new Set(list.split("\n").filter(Boolean));
+}
+
 /** Maps each PR to the open PR its branch was built on, from commit ancestry rather than the PR base. */
-export async function findGitParents(
+export async function findGitStack(
   directory: string,
   prs: StackPrInput[],
   trunk: string,
-): Promise<{ parents: Map<number, number>; warning: string | null }> {
+): Promise<GitStack> {
   const trunkRef = `origin/${trunk}`;
-  const trunkOid = (
-    await git(directory, ["rev-parse", "--verify", "-q", trunkRef]).catch(() => "")
-  ).trim();
+  const trunkOid =
+    (await git(directory, ["rev-parse", "--verify", "-q", trunkRef]).catch(() => "")).trim() ||
+    null;
   if (!trunkOid) {
     return {
       parents: new Map(),
+      uniqueCommits: new Map(),
+      trunkOid,
       warning: `Stacks from git ancestry need ${trunkRef}. Run git fetch.`,
     };
   }
 
   const key = [trunkOid, ...prs.map((pr) => `${pr.number}:${pr.headRefOid}`).sort()].join(",");
   const cached = cacheByDirectory.get(directory);
-  if (cached?.key === key) return { parents: cached.parents, warning: null };
+  if (cached?.key === key) return cached.stack;
 
   const present = await mapLimit(prs, MAX_PARALLEL_GIT, (pr) =>
     hasCommit(directory, pr.headRefOid),
@@ -81,18 +85,11 @@ export async function findGitParents(
     });
   }
 
-  const commitLists = await mapLimit(prs, MAX_PARALLEL_GIT, (pr) =>
-    git(directory, [
-      "rev-list",
-      `--max-count=${MAX_BRANCH_COMMITS}`,
-      pr.headRefOid,
-      `^${trunkOid}`,
-    ]).catch(() => ""),
+  const commitSets = await mapLimit(prs, MAX_PARALLEL_GIT, (pr) =>
+    commitsNotOn(directory, pr.headRefOid, trunkOid),
   );
-  const uniqueCommits = new Map(
-    prs.map((pr, index) => [pr.number, new Set(commitLists[index].split("\n").filter(Boolean))]),
-  );
-  const parents = gitStackParents(prs, uniqueCommits);
-  if (!warning) cacheByDirectory.set(directory, { key, parents });
-  return { parents, warning };
+  const uniqueCommits = new Map(prs.map((pr, index) => [pr.number, commitSets[index]]));
+  const stack = { parents: gitStackParents(prs, uniqueCommits), uniqueCommits, trunkOid, warning };
+  if (!warning) cacheByDirectory.set(directory, { key, stack });
+  return stack;
 }

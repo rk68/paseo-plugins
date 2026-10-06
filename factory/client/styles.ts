@@ -135,6 +135,7 @@ export function createStyles(theme: Theme) {
     },
     code: { color: colors.foreground, fontSize: 12, fontFamily: "monospace", flexShrink: 1 },
     notice: { color: colors.foregroundMuted, fontSize: 12, paddingHorizontal: 8 },
+    scopeLine: { color: colors.foregroundMuted, fontSize: 12, paddingHorizontal: 8, marginTop: -8 },
     empty: { color: colors.foregroundMuted, fontSize: 14, paddingHorizontal: 8 },
     error: { color: colors.statusDanger, fontSize: 12 },
     errorBlock: { color: colors.statusDanger, fontSize: 12, paddingHorizontal: 8 },

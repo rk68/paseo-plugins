@@ -45,9 +45,15 @@ const PrGroupSchema = z.object({
 
 export const prStackRpc = defineRpc({
   name: "factory.pr-stack.list",
-  input: z.object({ directory: z.string() }),
+  input: z.object({ directory: z.string(), scope: z.enum(["branch", "all"]) }),
   output: z.object({
     trunk: z.string(),
+    /** The workspace's checked-out branch; null on trunk or a detached HEAD. */
+    branch: z.string().nullable(),
+    /** True when the list holds only the PRs related to `branch`. */
+    filtered: z.boolean(),
+    /** True when `branch` has no related PRs, so the list falls back to all PRs. */
+    fallback: z.boolean(),
     groups: z.array(PrGroupSchema),
     warnings: z.array(z.string()),
   }),

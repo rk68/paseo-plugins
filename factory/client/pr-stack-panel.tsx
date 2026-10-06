@@ -38,22 +38,19 @@ const CHECK_ICON: Record<Check["state"], { icon: string; tone: Tone }> = {
   skipped: { icon: "CircleSlash", tone: "muted" },
 };
 
-export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspacePanelProps) {
-  const directory = useWorkspace(workspaceId, (workspace) => workspace.directory);
+type PrStackData = NonNullable<ReturnType<typeof usePrStack>["data"]>;
+
+function usePrStack(directory: string | null, scope: "branch" | "all") {
   const listPrStack = useRpc(prStackRpc);
-  const query = useQuery({
-    queryKey: ["factory.prStack", directory],
-    queryFn: () => listPrStack({ directory: directory ?? "" }),
+  return useQuery({
+    queryKey: ["factory.prStack", directory, scope],
+    queryFn: () => listPrStack({ directory: directory ?? "", scope }),
     enabled: directory !== null,
     refetchInterval: REFRESH_MS,
   });
-  const { refetch } = query;
-  const refresh = useCallback(() => void refetch(), [refetch]);
-  const [expanded, setExpanded] = useState<number | null>(null);
-  const toggle = useCallback(
-    (number: number) => setExpanded((current) => (current === number ? null : number)),
-    [],
-  );
+}
+
+function useSort() {
   const settings = useSettings(factorySettings);
   const ready = settings.status === "ready" ? settings : null;
   const sort: PrSort = ready?.values.sort ?? "urgency";
@@ -64,7 +61,25 @@ export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspace
       ready.revision,
     );
   }, [ready]);
-  const groups = useMemo(() => orderGroups(query.data?.groups ?? [], sort), [query.data, sort]);
+  return { sort, toggleSort, canSort: ready !== null };
+}
+
+export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspacePanelProps) {
+  const workspace = useWorkspace(workspaceId, ({ directory, projectRootPath }) => ({
+    directory,
+    projectRootPath,
+  }));
+  const directory = workspace?.directory ?? null;
+  const projectRoot = workspace?.projectRootPath ?? directory ?? "";
+  const [scope, setScope] = useState<"branch" | "all">("branch");
+  const toggleScope = useCallback(
+    () => setScope((current) => (current === "branch" ? "all" : "branch")),
+    [],
+  );
+  const query = usePrStack(directory, scope);
+  const { refetch } = query;
+  const refresh = useCallback(() => void refetch(), [refetch]);
+  const { sort, toggleSort, canSort } = useSort();
   const ageAt = sort === "newest" ? query.dataUpdatedAt : null;
   const [view, setView] = useState<"list" | "automation">("list");
   const showAutomation = useCallback(() => setView("automation"), []);
@@ -77,6 +92,7 @@ export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspace
       theme,
       styles,
       directory: directory ?? "",
+      projectRoot,
       openAgent: navigateToAgent ? (agentId) => navigateToAgent({ agentId }) : undefined,
       openWorkspace: navigateToWorkspace
         ? (target) => navigateToWorkspace({ workspaceId: target })
@@ -84,76 +100,136 @@ export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspace
       refresh,
       ageAt,
     }),
-    [theme, styles, directory, navigateToAgent, navigateToWorkspace, refresh, ageAt],
+    [theme, styles, directory, projectRoot, navigateToAgent, navigateToWorkspace, refresh, ageAt],
   );
-  const summary = useMemo(() => summarize(query.data?.groups ?? []), [query.data]);
-  let headerText = " ";
-  if (query.data) headerText = summary;
-  else if (query.isPending) headerText = "Loading...";
+  let summary = " ";
+  if (query.data) summary = summarize(query.data.groups);
+  else if (query.isPending) summary = "Loading...";
 
   return (
     <PanelProvider value={panel}>
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        {view === "automation" ? <AutomationView onBack={showList} /> : null}
-        {view === "list" ? (
+        {view === "automation" ? (
+          <AutomationView onBack={showList} />
+        ) : (
           <>
-            <View style={styles.header}>
-              <Text style={styles.headerText} numberOfLines={1}>
-                {headerText}
-              </Text>
-              <View style={styles.headerActions}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Sorted by ${sort === "newest" ? "newest" : "urgency"}. Change sort`}
-                  onPress={toggleSort}
-                  disabled={!ready}
-                  style={styles.sortButton}
-                >
-                  <Icon name="ArrowDownUp" size={12} color={theme.colors.foregroundMuted} />
-                  <Text style={styles.headerText}>{sort === "newest" ? "Newest" : "Urgent"}</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Automation settings"
-                  onPress={showAutomation}
-                  disabled={!directory}
-                  style={styles.iconButton}
-                >
-                  <Icon name="Settings" size={14} color={theme.colors.foregroundMuted} />
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Refresh pull requests"
-                  onPress={refresh}
-                  disabled={query.isFetching}
-                  style={query.isFetching ? styles.iconButtonBusy : styles.iconButton}
-                >
-                  <Icon name="RefreshCw" size={14} color={theme.colors.foregroundMuted} />
-                </Pressable>
-              </View>
-            </View>
+            <PanelHeader
+              summary={summary}
+              sort={sort}
+              canSort={canSort}
+              onToggleSort={toggleSort}
+              onShowAutomation={directory ? showAutomation : null}
+              onRefresh={refresh}
+              fetching={query.isFetching}
+            />
             {query.error ? <Text style={styles.errorBlock}>{query.error.message}</Text> : null}
-            {query.data?.warnings.map((warning) => (
-              <Text key={warning} style={styles.notice}>
-                {warning}
-              </Text>
-            ))}
-            {query.data?.groups.length === 0 ? (
-              <Text style={styles.empty}>No open pull requests</Text>
+            {query.data ? (
+              <PrList data={query.data} sort={sort} onToggleScope={toggleScope} />
             ) : null}
-            {groups.map((group) => (
-              <Group
-                key={`${group.kind}-${group.prs[0]?.number}`}
-                group={group}
-                trunk={query.data?.trunk ?? ""}
-                expanded={expanded}
-                onToggle={toggle}
-              />
-            ))}
           </>
-        ) : null}
+        )}
       </ScrollView>
     </PanelProvider>
+  );
+}
+
+function PanelHeader({
+  summary,
+  sort,
+  canSort,
+  onToggleSort,
+  onShowAutomation,
+  onRefresh,
+  fetching,
+}: {
+  summary: string;
+  sort: PrSort;
+  canSort: boolean;
+  onToggleSort(): void;
+  onShowAutomation: (() => void) | null;
+  onRefresh(): void;
+  fetching: boolean;
+}) {
+  const { styles, theme } = usePanel();
+  return (
+    <View style={styles.header}>
+      <Text style={styles.headerText} numberOfLines={1}>
+        {summary}
+      </Text>
+      <View style={styles.headerActions}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Sorted by ${sort === "newest" ? "newest" : "urgency"}. Change sort`}
+          onPress={onToggleSort}
+          disabled={!canSort}
+          style={styles.sortButton}
+        >
+          <Icon name="ArrowDownUp" size={12} color={theme.colors.foregroundMuted} />
+          <Text style={styles.headerText}>{sort === "newest" ? "Newest" : "Urgent"}</Text>
+        </Pressable>
+        {onShowAutomation ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Automation settings"
+            onPress={onShowAutomation}
+            style={styles.iconButton}
+          >
+            <Icon name="Settings" size={14} color={theme.colors.foregroundMuted} />
+          </Pressable>
+        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Refresh pull requests"
+          onPress={onRefresh}
+          disabled={fetching}
+          style={fetching ? styles.iconButtonBusy : styles.iconButton}
+        >
+          <Icon name="RefreshCw" size={14} color={theme.colors.foregroundMuted} />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function PrList({
+  data,
+  sort,
+  onToggleScope,
+}: {
+  data: PrStackData;
+  sort: PrSort;
+  onToggleScope(): void;
+}) {
+  const { styles } = usePanel();
+  const groups = useMemo(() => orderGroups(data.groups, sort), [data.groups, sort]);
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const toggle = useCallback(
+    (number: number) => setExpanded((current) => (current === number ? null : number)),
+    [],
+  );
+  return (
+    <>
+      {data.branch ? <ScopeLine data={data} onToggleScope={onToggleScope} /> : null}
+      {data.warnings.map((warning) => (
+        <Text key={warning} style={styles.notice}>
+          {warning}
+        </Text>
+      ))}
+      {groups.length === 0 ? (
+        <Text style={styles.empty}>
+          {data.filtered ? "No open PRs for this branch" : "No open pull requests"}
+        </Text>
+      ) : null}
+      {groups.map((group) => (
+        <Group
+          key={`${group.kind}-${group.prs[0]?.number}`}
+          group={group}
+          trunk={data.trunk}
+          expanded={expanded}
+          onToggle={toggle}
+        />
+      ))}
+    </>
   );
 }
 
@@ -173,6 +249,25 @@ const GROUP_TITLE: Record<PrGroup["kind"], string> = {
   stack: "Stack",
   independent: "Independent",
 };
+
+function ScopeLine({ data, onToggleScope }: { data: PrStackData; onToggleScope(): void }) {
+  const { styles } = usePanel();
+  if (data.fallback) {
+    return (
+      <Text style={styles.scopeLine} numberOfLines={1}>
+        {`No PRs for ${data.branch} yet. Showing all`}
+      </Text>
+    );
+  }
+  return (
+    <Text style={styles.scopeLine} numberOfLines={1}>
+      {data.filtered ? `PRs for ${data.branch}` : "All your PRs"}
+      <Text style={styles.link} onPress={onToggleScope}>
+        {data.filtered ? "  Show all" : `  Only ${data.branch}`}
+      </Text>
+    </Text>
+  );
+}
 
 function Group({
   group,

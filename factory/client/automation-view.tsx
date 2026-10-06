@@ -59,8 +59,8 @@ export function AutomationView({ onBack }: { onBack(): void }) {
 }
 
 function AutomationForm({ settings }: { settings: Ready }) {
-  const { directory, styles } = usePanel();
-  const enabled = settings.values.automation[directory] ?? NO_AUTOMATION;
+  const { projectRoot, styles } = usePanel();
+  const enabled = settings.values.automation[projectRoot] ?? NO_AUTOMATION;
   const [prompts, setPrompts] = useState(settings.values.prompts);
   const [ignored, setIgnored] = useState(settings.values.ignoredChecks.join(", "));
 
@@ -68,11 +68,11 @@ function AutomationForm({ settings }: { settings: Ready }) {
     (kind: TaskKind, value: boolean) => {
       const automation = {
         ...settings.values.automation,
-        [directory]: { ...enabled, [kind]: value },
+        [projectRoot]: { ...enabled, [kind]: value },
       };
       void settings.save({ ...settings.values, automation }, settings.revision);
     },
-    [settings, directory, enabled],
+    [settings, projectRoot, enabled],
   );
   const saveInstructions = useCallback(() => {
     const ignoredChecks = ignored

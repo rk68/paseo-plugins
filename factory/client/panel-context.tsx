@@ -5,6 +5,8 @@ export interface PanelContextValue {
   theme: Theme;
   styles: Styles;
   directory: string;
+  /** The project's main checkout; automation settings are keyed by it, so worktrees share them. */
+  projectRoot: string;
   /** Undefined on hosts without client navigation. */
   openAgent: ((agentId: string) => void) | undefined;
   openWorkspace: ((workspaceId: string) => void) | undefined;

@@ -2,7 +2,8 @@ import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { RpcInput } from "@getpaseo/plugin";
 import type { PrStack, prStackRpc } from "../shared/pr-stack";
 import { gh, repoInfo } from "./gh";
-import { findGitParents } from "./git-stack";
+import { findGitStack } from "./git-stack";
+import { checkedOutBranch, relatedPrs, scopeGroups } from "./scope";
 import { findTasks, taskKey } from "./tasks";
 import { unresolvedThreads } from "./threads";
 import { listWorktrees } from "./worktrees";
@@ -43,7 +44,7 @@ export async function listOpenPrs(directory: string): Promise<GhPr[]> {
 }
 
 export async function listPrStack(
-  { directory }: RpcInput<typeof prStackRpc>,
+  { directory, scope }: RpcInput<typeof prStackRpc>,
   paseo: PaseoApi,
 ): Promise<PrStack> {
   const [{ nameWithOwner, trunk }, prs] = await Promise.all([
@@ -51,19 +52,25 @@ export async function listPrStack(
     listOpenPrs(directory),
   ]);
   const warnings: string[] = [];
-  const [{ parents, warning }, tasks, threads, worktrees] = await Promise.all([
-    findGitParents(directory, prs, trunk),
-    findTasks(paseo, nameWithOwner),
-    unresolvedThreads(directory, nameWithOwner).catch((error: unknown) => {
-      warnings.push(
-        `Review comments unavailable: ${error instanceof Error ? error.message : error}`,
-      );
-      return new Map<number, number>();
-    }),
-    listWorktrees(directory).catch(() => new Map<string, string>()),
-  ]);
+  const [{ parents, uniqueCommits, trunkOid, warning }, tasks, threads, worktrees] =
+    await Promise.all([
+      findGitStack(directory, prs, trunk),
+      findTasks(paseo, nameWithOwner),
+      unresolvedThreads(directory, nameWithOwner).catch((error: unknown) => {
+        warnings.push(
+          `Review comments unavailable: ${error instanceof Error ? error.message : error}`,
+        );
+        return new Map<number, number>();
+      }),
+      listWorktrees(directory).catch(() => new Map<string, string>()),
+    ]);
   if (warning) warnings.push(warning);
-  const groups = buildPrGroups(prs, trunk, parents);
+  const branch = await checkedOutBranch(directory, trunk, trunkOid);
+  const allGroups = buildPrGroups(prs, trunk, parents);
+  const related = scope === "branch" && branch ? relatedPrs(prs, branch, uniqueCommits) : null;
+  const fallback = related !== null && related.size === 0;
+  const filtered = related !== null && !fallback;
+  const groups = filtered ? scopeGroups(allGroups, related) : allGroups;
   for (const pr of groups.flatMap((group) => group.prs)) {
     pr.threads = threads.get(pr.number) ?? 0;
     pr.worktree = worktrees.get(pr.head) ?? null;
@@ -77,5 +84,5 @@ export async function listPrStack(
         }
       : null;
   }
-  return { trunk, groups, warnings };
+  return { trunk, branch: branch?.name ?? null, filtered, fallback, groups, warnings };
 }

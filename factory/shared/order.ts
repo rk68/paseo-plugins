@@ -39,9 +39,11 @@ export function orderGroups(groups: PrGroup[], sort: PrSort): PrGroup[] {
 }
 
 export function age(iso: string, nowMs: number): string {
-  const hours = Math.floor((nowMs - Date.parse(iso)) / 3_600_000);
-  if (!Number.isFinite(hours)) return "";
-  if (hours < 1) return "opened just now";
+  const minutes = Math.floor((nowMs - Date.parse(iso)) / 60_000);
+  if (!Number.isFinite(minutes)) return "";
+  if (minutes < 1) return "opened just now";
+  if (minutes < 60) return `opened ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
   if (hours < 48) return `opened ${hours}h ago`;
   return `opened ${Math.floor(hours / 24)}d ago`;
 }
