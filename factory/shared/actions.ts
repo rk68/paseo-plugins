@@ -39,6 +39,19 @@ export const updateBranchRpc = defineRpc({
   output: z.object({ message: z.string() }),
 });
 
+export const markReadyRpc = defineRpc({
+  name: "factory.pr.mark-ready",
+  input: PrTargetSchema,
+  output: z.object({ message: z.string() }),
+});
+
+export const squashMergeRpc = defineRpc({
+  name: "factory.pr.squash-merge",
+  /** `headOid` is the head the user saw: a newer push makes the merge fail instead. */
+  input: PrTargetSchema.extend({ headOid: z.string() }),
+  output: z.object({ message: z.string() }),
+});
+
 export const openBranchRpc = defineRpc({
   name: "factory.pr.open-branch",
   input: PrTargetSchema,

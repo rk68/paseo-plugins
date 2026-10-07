@@ -1,6 +1,12 @@
 import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext, PluginSettings } from "@getpaseo/plugin/server";
-import type { factorySettings, startTaskRpc, updateBranchRpc } from "../shared/actions";
+import type {
+  factorySettings,
+  markReadyRpc,
+  squashMergeRpc,
+  startTaskRpc,
+  updateBranchRpc,
+} from "../shared/actions";
 import { gh } from "./gh";
 import { startTask, taskTarget } from "./tasks";
 
@@ -10,6 +16,24 @@ type Settings = PluginSettings<typeof factorySettings.schema>;
 export async function updateBranch({ directory, number }: RpcInput<typeof updateBranchRpc>) {
   const output = await gh(directory, ["pr", "update-branch", String(number)]);
   return { message: output.trim() || `Updated #${number}` };
+}
+
+export async function markReady({ directory, number }: RpcInput<typeof markReadyRpc>) {
+  const output = await gh(directory, ["pr", "ready", String(number)]);
+  return { message: output.trim() || `Marked #${number} ready for review` };
+}
+
+// No --delete-branch: gh would also delete the local branch, which a worktree can hold.
+export async function squashMerge({ directory, number, headOid }: RpcInput<typeof squashMergeRpc>) {
+  const output = await gh(directory, [
+    "pr",
+    "merge",
+    String(number),
+    "--squash",
+    "--match-head-commit",
+    headOid,
+  ]);
+  return { message: output.trim() || `Merged #${number}` };
 }
 
 export async function startTaskFromPanel(

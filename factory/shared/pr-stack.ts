@@ -13,6 +13,7 @@ const PrSchema = z.object({
   title: z.string(),
   url: z.string(),
   head: z.string(),
+  headOid: z.string(),
   base: z.string(),
   createdAt: z.string(),
   draft: z.boolean(),
@@ -21,6 +22,8 @@ const PrSchema = z.object({
   review: z.enum(["approved", "changes_requested", "review_required", "none"]),
   merge: z.enum(["ready", "conflicts", "behind", "blocked", "unknown"]),
   depth: z.number(),
+  /** The viewer may squash-merge this PR, and it targets trunk without being built on another PR. */
+  canSquash: z.boolean(),
   /** Set when the branch is built on this PR's branch, but the PR targets another base. */
   builtOn: z.number().nullable(),
   /** Path of the local worktree that has the PR branch checked out. */

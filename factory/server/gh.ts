@@ -50,7 +50,11 @@ export interface RepoInfo {
   /** The forge host, such as github.com or a GitHub Enterprise host. */
   host: string;
   trunk: string;
+  /** The repository allows squash merges and the viewer has write access. */
+  canSquash: boolean;
 }
+
+const WRITE_PERMISSIONS = new Set(["ADMIN", "MAINTAIN", "WRITE"]);
 
 /** `host/owner/repo`: the identity for task labels, keys and locks, and the gh --repo value. */
 export function repoId(info: Pick<RepoInfo, "host" | "nameWithOwner">): string {
@@ -59,11 +63,23 @@ export function repoId(info: Pick<RepoInfo, "host" | "nameWithOwner">): string {
 
 export async function repoInfo(directory: string): Promise<RepoInfo> {
   const repo = JSON.parse(
-    await gh(directory, ["repo", "view", "--json", "nameWithOwner,url,defaultBranchRef"]),
-  ) as { nameWithOwner: string; url: string; defaultBranchRef: { name: string } };
+    await gh(directory, [
+      "repo",
+      "view",
+      "--json",
+      "nameWithOwner,url,defaultBranchRef,viewerPermission,squashMergeAllowed",
+    ]),
+  ) as {
+    nameWithOwner: string;
+    url: string;
+    defaultBranchRef: { name: string };
+    viewerPermission: string | null;
+    squashMergeAllowed: boolean;
+  };
   return {
     nameWithOwner: repo.nameWithOwner,
     host: new URL(repo.url).host,
     trunk: repo.defaultBranchRef.name,
+    canSquash: repo.squashMergeAllowed && WRITE_PERMISSIONS.has(repo.viewerPermission ?? ""),
   };
 }

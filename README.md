@@ -58,7 +58,11 @@ Then turn on **Settings → Plugins → Enable plugins**, if it is not on alread
   | Resolve conflicts         | Starts an agent that merges the base, resolves the conflicts, runs the checks and pushes     |
   | Fix CI                    | Starts an agent that reads the failing logs and fixes the cause, without weakening any check |
   | Address comments          | Starts an agent that fixes or answers each unresolved review thread, then resolves it        |
+  | Mark ready                | Runs `gh pr ready` on a draft PR                                                             |
+  | Squash and merge          | Runs `gh pr merge --squash` after a second press to confirm. It fails if the head changed    |
   | Check out / Open worktree | Opens the PR branch as a Paseo workspace, ready for your edits                               |
+
+  Squash and merge shows only on a row that reads "Ready to merge", targets trunk directly, and only when the repository allows squash merges and you have write access.
 
   Agents run Claude Opus 5.5 in a new worktree that starts at the PR head. They never rebase, force-push, change the base or merge.
 
