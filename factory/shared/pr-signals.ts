@@ -17,7 +17,8 @@ export type PrAction =
   | "ready"
   | "merge"
   | "checkout"
-  | "open-agent";
+  | "open-agent"
+  | "archive-task";
 
 export const TONE_RANK: Record<Tone, number> = { danger: 0, warning: 1, success: 2, muted: 3 };
 const MAX_NAMED_CHECKS = 2;
@@ -120,7 +121,7 @@ export function prActions(pr: Pr): PrAction[] {
   // Only a row that reads "Ready to merge" offers it, so a merge never skips a visible warning.
   if (pr.canSquash && prTone(pr) === "success") actions.push("merge");
   actions.push("checkout");
-  if (pr.task) actions.push("open-agent");
+  if (pr.task) actions.push("open-agent", "archive-task");
   return actions;
 }
 

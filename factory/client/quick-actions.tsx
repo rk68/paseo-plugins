@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import {
+  archiveTasksRpc,
   markReadyRpc,
   openBranchRpc,
   retargetToTrunkRpc,
@@ -26,6 +27,7 @@ const ACTION_ICON: Record<PrAction, string> = {
   merge: "GitMerge",
   checkout: "GitBranch",
   "open-agent": "Bot",
+  "archive-task": "Archive",
 };
 
 const PENDING_LABEL: Record<PrAction, string> = {
@@ -38,6 +40,7 @@ const PENDING_LABEL: Record<PrAction, string> = {
   merge: "Merging...",
   checkout: "Opening...",
   "open-agent": "Opening...",
+  "archive-task": "Archiving...",
 };
 // A merge cannot be undone, so it takes a second press within this window.
 const CONFIRM_MS = 4_000;
@@ -65,6 +68,8 @@ function actionLabel(action: PrAction, pr: Pr, confirmingMerge: boolean): string
       return pr.worktree ? "Open worktree" : "Check out";
     case "open-agent":
       return "Open agent";
+    case "archive-task":
+      return "Archive agent";
   }
 }
 
@@ -98,6 +103,11 @@ export function QuickActions({ pr }: { pr: Pr }) {
       setTimeout(refresh, RECHECK_MS);
     },
   });
+  const archiveTasks = useRpc(archiveTasksRpc);
+  const archive = useMutation({
+    mutationFn: () => archiveTasks({ directory, number: pr.number }),
+    onSuccess: refresh,
+  });
   const markReady = useRpc(markReadyRpc);
   const ready = useMutation({
     mutationFn: () => markReady({ directory, number: pr.number }),
@@ -121,6 +131,7 @@ export function QuickActions({ pr }: { pr: Pr }) {
   else if (checkout.isPending) pending = "checkout";
   else if (ready.isPending) pending = "ready";
   else if (merge.isPending) pending = "merge";
+  else if (archive.isPending) pending = "archive-task";
   else if (task.isPending) pending = task.variables ?? null;
   const agentId = task.data?.agentId ?? pr.task?.agentId;
 
@@ -131,6 +142,7 @@ export function QuickActions({ pr }: { pr: Pr }) {
       else if (action === "update") update.mutate();
       else if (action === "checkout") checkout.mutate();
       else if (action === "ready") ready.mutate();
+      else if (action === "archive-task") archive.mutate();
       else if (action === "merge") {
         if (confirmingMerge) merge.mutate();
         setConfirmingMerge(!confirmingMerge);
@@ -138,13 +150,19 @@ export function QuickActions({ pr }: { pr: Pr }) {
         if (agentId) openAgent?.(agentId);
       } else task.mutate(action);
     },
-    [retarget, update, task, checkout, ready, merge, confirmingMerge, agentId, openAgent],
+    [retarget, update, task, checkout, ready, merge, archive, confirmingMerge, agentId, openAgent],
   );
 
   const actions = prActions(pr).filter((action) => action !== "open-agent" || openAgent);
   if (!actions.length) return null;
   const error =
-    retarget.error ?? update.error ?? task.error ?? checkout.error ?? ready.error ?? merge.error;
+    retarget.error ??
+    update.error ??
+    task.error ??
+    checkout.error ??
+    ready.error ??
+    merge.error ??
+    archive.error;
   return (
     <View style={styles.quickActions}>
       <View style={styles.actions}>

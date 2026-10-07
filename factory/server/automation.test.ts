@@ -41,7 +41,16 @@ function task(
   headOid: string,
   trigger: Trigger = "auto",
 ): TaskAgent {
-  return { agentId: "a", workspaceId: "w", status, kind, headOid, trigger, createdAt: "t" };
+  return {
+    agentId: "a",
+    workspaceId: "w",
+    status,
+    kind,
+    headOid,
+    trigger,
+    createdAt: "t",
+    archived: false,
+  };
 }
 
 function run(

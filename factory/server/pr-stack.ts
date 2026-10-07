@@ -111,7 +111,7 @@ export async function listPrStack(
         head: pr.head,
         isCrossRepository: crossRepository.has(pr.number),
       }) ?? null;
-    const [latest] = tasks.get(taskKey(repoId(repo), pr.number)) ?? [];
+    const latest = tasks.get(taskKey(repoId(repo), pr.number))?.find((task) => !task.archived);
     pr.task = latest
       ? {
           kind: latest.kind,

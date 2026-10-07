@@ -1,7 +1,7 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { describe, expect, it } from "vitest";
 import type { TaskTarget } from "./task-prompts";
-import { findTasks, releaseTaskBases, startTask as startWithFetch } from "./tasks";
+import { archiveTasks, findTasks, releaseTaskBases, startTask as startWithFetch } from "./tasks";
 
 const pins: { ref: string; oid: string }[] = [];
 const unpins: { root: string; ref: string }[] = [];
@@ -27,6 +27,7 @@ interface FakeAgent {
 
 /** An in-memory Paseo API: label filter, archived filter, cursor pages and a slow create. */
 const sources: string[] = [];
+const archivedWorkspaces: string[] = [];
 
 function fakePaseo(agents: FakeAgent[], pageSize = 2) {
   let created = 0;
@@ -46,7 +47,9 @@ function fakePaseo(agents: FakeAgent[], pageSize = 2) {
         const limit = Math.min(options.page?.limit ?? 200, pageSize);
         const end = start + limit;
         return {
-          entries: matching.slice(start, end).map((agent) => ({ agent })),
+          entries: matching
+            .slice(start, end)
+            .map((agent) => ({ agent: { ...agent, archivedAt: agent.archived ? "t" : null } })),
           pageInfo: {
             hasMore: end < matching.length,
             nextCursor: end < matching.length ? String(end) : null,
@@ -54,8 +57,21 @@ function fakePaseo(agents: FakeAgent[], pageSize = 2) {
           },
         };
       },
+      ref(id: string) {
+        return {
+          async archive() {
+            const agent = agents.find((candidate) => candidate.id === id);
+            if (agent) agent.archived = true;
+            return { archivedAt: "t" };
+          },
+        };
+      },
     },
     workspaces: {
+      async archive(id: string) {
+        archivedWorkspaces.push(id);
+        return { requestId: "r", workspaceId: id, archivedAt: "t", error: null };
+      },
       async create(options: { source: { refName?: string } }) {
         sources.push(options.source.refName ?? "");
         const workspaceId = `w${++created}`;
@@ -220,5 +236,30 @@ describe("task identity and start commit", () => {
 
     await releaseTaskBases(paseo, labels["factory.workspace"] ?? "", fakeGit("h7"));
     expect(unpins).toEqual([{ root: "/main", ref: sources[0] }]);
+  });
+});
+
+describe("archiveTasks", () => {
+  it("archives the finished tasks of one PR and each of their workspaces once", async () => {
+    archivedWorkspaces.length = 0;
+    const agents = [
+      taskAgent("a1", 7, { workspaceId: "w1" }),
+      taskAgent("a22", 7, { workspaceId: "w1", status: "error" }),
+      taskAgent("a333", 7, { workspaceId: "w2", archived: true }),
+      taskAgent("a4444", 8, { workspaceId: "w3" }),
+    ];
+    expect(await archiveTasks(fakePaseo(agents), "github.com/o/r", 7)).toBe(2);
+    expect(agents.map((agent) => agent.archived)).toEqual([true, true, true, false]);
+    expect(archivedWorkspaces).toEqual(["w1"]);
+  });
+
+  it("refuses while a task on the PR runs", async () => {
+    archivedWorkspaces.length = 0;
+    const agents = [taskAgent("a1", 7), taskAgent("a22", 7, { status: "running" })];
+    await expect(archiveTasks(fakePaseo(agents), "github.com/o/r", 7)).rejects.toThrow(
+      "A task is still running on #7",
+    );
+    expect(agents.some((agent) => agent.archived)).toBe(false);
+    expect(archivedWorkspaces).toEqual([]);
   });
 });
