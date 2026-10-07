@@ -74,6 +74,7 @@ export async function listPrStack(
   const groups = filtered ? scopeGroups(allGroups, related) : allGroups;
   for (const pr of groups.flatMap((group) => group.prs)) {
     pr.threads = threads.get(pr.number) ?? 0;
+    pr.canSquash = repo.canSquash && pr.base === trunk && pr.builtOn === null;
     pr.worktree =
       reusableWorktree(worktrees, {
         number: pr.number,

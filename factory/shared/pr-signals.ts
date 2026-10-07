@@ -10,7 +10,7 @@ export interface PrSignal {
   busy?: boolean;
 }
 
-export type PrAction = "update" | TaskKind | "checkout" | "open-agent";
+export type PrAction = "update" | TaskKind | "ready" | "merge" | "checkout" | "open-agent";
 
 export const TONE_RANK: Record<Tone, number> = { danger: 0, warning: 1, success: 2, muted: 3 };
 const MAX_NAMED_CHECKS = 2;
@@ -93,6 +93,9 @@ export function prActions(pr: Pr): PrAction[] {
   if (pr.merge === "conflicts") actions.push("conflicts");
   if (pr.ci === "fail") actions.push("ci");
   if (pr.threads > 0 || pr.review === "changes_requested") actions.push("comments");
+  if (pr.draft) actions.push("ready");
+  // Only a row that reads "Ready to merge" offers it, so a merge never skips a visible warning.
+  if (pr.canSquash && prTone(pr) === "success") actions.push("merge");
   actions.push("checkout");
   if (pr.task) actions.push("open-agent");
   return actions;

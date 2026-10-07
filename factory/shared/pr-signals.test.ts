@@ -8,6 +8,7 @@ function pr(extra: Partial<Pr> = {}): Pr {
     title: "PR",
     url: "u",
     head: "feat",
+    headOid: "oid",
     base: "main",
     createdAt: "2026-01-01T00:00:00Z",
     draft: false,
@@ -16,6 +17,7 @@ function pr(extra: Partial<Pr> = {}): Pr {
     review: "none",
     merge: "ready",
     depth: 0,
+    canSquash: false,
     builtOn: null,
     worktree: null,
     threads: 0,
@@ -103,6 +105,17 @@ describe("prActions", () => {
       "checkout",
     ]);
     expect(prActions(pr({ ci: "pass" }))).toEqual(["checkout"]);
+  });
+
+  it("offers a draft PR to mark ready", () => {
+    expect(prActions(pr({ draft: true, merge: "unknown" }))).toEqual(["ready", "checkout"]);
+  });
+
+  it("offers a squash merge only to a PR that is ready and the viewer may merge", () => {
+    expect(prActions(pr({ canSquash: true, ci: "pass" }))).toEqual(["merge", "checkout"]);
+    expect(prActions(pr({ canSquash: false, ci: "pass" }))).toEqual(["checkout"]);
+    expect(prActions(pr({ canSquash: true, merge: "blocked" }))).toEqual(["checkout"]);
+    expect(prActions(pr({ canSquash: true, threads: 1 }))).toEqual(["comments", "checkout"]);
   });
 
   it("offers only the agent while a task runs, and the agent after it ends", () => {
