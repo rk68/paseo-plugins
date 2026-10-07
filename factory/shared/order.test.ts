@@ -18,6 +18,8 @@ function pr(number: number, createdAt: string, extra: Partial<Pr> = {}): Pr {
     merge: "ready",
     depth: 0,
     canSquash: false,
+    retargetTo: null,
+    basePr: null,
     builtOn: null,
     worktree: null,
     threads: 0,

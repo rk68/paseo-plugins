@@ -3,11 +3,12 @@ import type { PluginHandlerContext, PluginSettings } from "@getpaseo/plugin/serv
 import type {
   factorySettings,
   markReadyRpc,
+  retargetToTrunkRpc,
   squashMergeRpc,
   startTaskRpc,
   updateBranchRpc,
 } from "../shared/actions";
-import { gh } from "./gh";
+import { gh, repoInfo } from "./gh";
 import { startTask, taskTarget } from "./tasks";
 
 type PaseoApi = PluginHandlerContext["paseo"];
@@ -21,6 +22,12 @@ export async function updateBranch({ directory, number }: RpcInput<typeof update
 export async function markReady({ directory, number }: RpcInput<typeof markReadyRpc>) {
   const output = await gh(directory, ["pr", "ready", String(number)]);
   return { message: output.trim() || `Marked #${number} ready for review` };
+}
+
+export async function retargetToTrunk({ directory, number }: RpcInput<typeof retargetToTrunkRpc>) {
+  const { trunk } = await repoInfo(directory);
+  await gh(directory, ["pr", "edit", String(number), "--base", trunk]);
+  return { message: `Moved #${number} to ${trunk}` };
 }
 
 // No --delete-branch: gh would also delete the local branch, which a worktree can hold.

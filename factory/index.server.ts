@@ -1,5 +1,11 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { markReady, squashMerge, startTaskFromPanel, updateBranch } from "./server/actions";
+import {
+  markReady,
+  retargetToTrunk,
+  squashMerge,
+  startTaskFromPanel,
+  updateBranch,
+} from "./server/actions";
 import { createAutomation } from "./server/automation";
 import { openBranch } from "./server/open-branch";
 import { listPrStack } from "./server/pr-stack";
@@ -8,6 +14,7 @@ import {
   factorySettings,
   markReadyRpc,
   openBranchRpc,
+  retargetToTrunkRpc,
   squashMergeRpc,
   startTaskRpc,
   updateBranchRpc,
@@ -28,6 +35,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(updateBranchRpc, updateBranch);
   server.handle(markReadyRpc, markReady);
   server.handle(squashMergeRpc, squashMerge);
+  server.handle(retargetToTrunkRpc, retargetToTrunk);
   server.handle(openBranchRpc, (input, { paseo }) => openBranch(input, paseo));
   server.handle(startTaskRpc, (input, { paseo }) => startTaskFromPanel(input, paseo, settings));
   return () => automation.stop();
