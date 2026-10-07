@@ -59,6 +59,12 @@ export const retargetToTrunkRpc = defineRpc({
   output: z.object({ message: z.string() }),
 });
 
+export const archiveTasksRpc = defineRpc({
+  name: "factory.pr.archive-tasks",
+  input: PrTargetSchema,
+  output: z.object({ archived: z.number() }),
+});
+
 export const openBranchRpc = defineRpc({
   name: "factory.pr.open-branch",
   input: PrTargetSchema,

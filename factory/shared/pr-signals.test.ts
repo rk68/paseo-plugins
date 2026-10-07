@@ -145,12 +145,13 @@ describe("prActions", () => {
     ]);
   });
 
-  it("offers only the agent while a task runs, and the agent after it ends", () => {
+  it("offers only the agent while a task runs, and the agent and its archive after it ends", () => {
     expect(prActions(pr({ merge: "behind", task: task("ci", "running") }))).toEqual(["open-agent"]);
     expect(prActions(pr({ ci: "fail", task: task("ci", "idle") }))).toEqual([
       "ci",
       "checkout",
       "open-agent",
+      "archive-task",
     ]);
   });
 });

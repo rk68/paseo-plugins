@@ -1,6 +1,7 @@
 import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext, PluginSettings } from "@getpaseo/plugin/server";
 import type {
+  archiveTasksRpc,
   factorySettings,
   markReadyRpc,
   retargetToTrunkRpc,
@@ -8,8 +9,8 @@ import type {
   startTaskRpc,
   updateBranchRpc,
 } from "../shared/actions";
-import { gh, repoInfo } from "./gh";
-import { startTask, taskTarget } from "./tasks";
+import { gh, repoId, repoInfo } from "./gh";
+import { archiveTasks, startTask, taskTarget } from "./tasks";
 
 type PaseoApi = PluginHandlerContext["paseo"];
 type Settings = PluginSettings<typeof factorySettings.schema>;
@@ -41,6 +42,14 @@ export async function squashMerge({ directory, number, headOid }: RpcInput<typeo
     headOid,
   ]);
   return { message: output.trim() || `Merged #${number}` };
+}
+
+export async function archiveTasksFromPanel(
+  { directory, number }: RpcInput<typeof archiveTasksRpc>,
+  paseo: PaseoApi,
+) {
+  const repo = await repoInfo(directory);
+  return { archived: await archiveTasks(paseo, repoId(repo), number) };
 }
 
 export async function startTaskFromPanel(

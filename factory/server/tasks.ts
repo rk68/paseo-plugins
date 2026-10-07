@@ -42,6 +42,7 @@ export interface TaskAgent {
   headOid: string;
   trigger: Trigger;
   createdAt: string;
+  archived: boolean;
 }
 
 export function taskKey(repo: string, number: number): string {
@@ -97,6 +98,7 @@ export async function findTasks(paseo: PaseoApi, repo: string): Promise<Map<stri
           headOid: labels[LABEL.head] ?? "",
           trigger: labels[LABEL.trigger] === "auto" ? "auto" : "manual",
           createdAt: agent.createdAt,
+          archived: Boolean(agent.archivedAt),
         },
       ]);
     }
@@ -219,6 +221,27 @@ export function startTask(
       },
     });
     return { agentId: agent.id, workspaceId: workspace.id, reused: false };
+  });
+}
+
+/**
+ * Archives the agents and workspaces of a PR's finished tasks. Each task runs in a workspace that
+ * `startTask` created for it, so no workspace of the user's is touched.
+ */
+export function archiveTasks(paseo: PaseoApi, repo: string, number: number): Promise<number> {
+  return withRepoLock(repo, async () => {
+    const history = (await findTasks(paseo, repo)).get(taskKey(repo, number)) ?? [];
+    if (history.some((task) => isActive(task))) {
+      throw new Error(`A task is still running on #${number}`);
+    }
+    const open = history.filter((task) => !task.archived);
+    // Archives the agents first: a workspace archive is not known to archive its agents.
+    for (const task of open) await paseo.agents.ref(task.agentId).archive();
+    for (const workspaceId of new Set(open.map((task) => task.workspaceId).filter(Boolean))) {
+      const { error } = await paseo.workspaces.archive(workspaceId);
+      if (error) throw new Error(error);
+    }
+    return open.length;
   });
 }
 
