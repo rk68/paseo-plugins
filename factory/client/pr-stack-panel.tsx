@@ -5,7 +5,7 @@ import {
   useSettings,
   useWorkspace,
 } from "@getpaseo/plugin/client";
-import { copyText, Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
+import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { ExternalLink } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
@@ -288,37 +288,16 @@ function Group({
     <View style={group.kind === "stack" ? styles.stackGroup : styles.group}>
       <Text style={group.kind === "stack" ? styles.stackTitle : styles.groupTitle}>{title}</Text>
       {group.prs.map((pr) => (
-        <PrRow
-          key={pr.number}
-          pr={pr}
-          retargetTo={group.kind === "wrong_base" && pr.depth === 0 ? trunk : null}
-          open={expanded === pr.number}
-          onToggle={onToggle}
-        />
+        <PrRow key={pr.number} pr={pr} open={expanded === pr.number} onToggle={onToggle} />
       ))}
     </View>
   );
 }
 
-function PrRow({
-  pr,
-  retargetTo,
-  open,
-  onToggle,
-}: {
-  pr: Pr;
-  retargetTo: string | null;
-  open: boolean;
-  onToggle(number: number): void;
-}) {
+function PrRow({ pr, open, onToggle }: { pr: Pr; open: boolean; onToggle(number: number): void }) {
   const { theme, styles, ageAt } = usePanel();
   const toggle = useCallback(() => onToggle(pr.number), [onToggle, pr.number]);
-  const signals = useMemo(() => {
-    const list = prSignals(pr);
-    return retargetTo
-      ? [{ tone: "danger" as const, label: `Base ${pr.base} has no open PR` }, ...list]
-      : list;
-  }, [pr, retargetTo]);
+  const signals = useMemo(() => prSignals(pr), [pr]);
   const [lead, ...rest] = signals;
   const a11yState = useMemo(() => ({ expanded: open }), [open]);
   const tone = lead?.tone ?? "muted";
@@ -368,22 +347,18 @@ function PrRow({
         </Pressable>
         {/* Outside the row button: web cannot nest buttons. */}
         <QuickActions pr={pr} />
-        {open ? <PrDetails pr={pr} retargetTo={retargetTo} /> : null}
+        {open ? <PrDetails pr={pr} /> : null}
       </View>
     </View>
   );
 }
 
-function PrDetails({ pr, retargetTo }: { pr: Pr; retargetTo: string | null }) {
-  const { theme, styles } = usePanel();
+function PrDetails({ pr }: { pr: Pr }) {
+  const { styles } = usePanel();
   const { passed, skipped } = checkCounts(pr);
   const attention = pr.checks.filter(
     (check) => check.state === "fail" || check.state === "pending",
   );
-  const retarget = retargetTo ? `gh pr edit ${pr.number} --base ${retargetTo}` : null;
-  const copyRetarget = useCallback(() => {
-    if (retarget) void copyText(retarget);
-  }, [retarget]);
   return (
     <View style={styles.details}>
       <Text style={styles.branch} numberOfLines={1}>{`${pr.head} → ${pr.base}`}</Text>
@@ -399,14 +374,6 @@ function PrDetails({ pr, retargetTo }: { pr: Pr; retargetTo: string | null }) {
       ) : (
         <Text style={styles.meta}>No checks reported</Text>
       )}
-      {retarget ? (
-        <Pressable accessibilityRole="button" onPress={copyRetarget} style={styles.command}>
-          <Text style={styles.code} numberOfLines={1}>
-            {retarget}
-          </Text>
-          <Icon name="Copy" size={12} color={theme.colors.foregroundMuted} />
-        </Pressable>
-      ) : null}
       <ExternalLink href={pr.url}>Open on GitHub</ExternalLink>
     </View>
   );

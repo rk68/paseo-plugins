@@ -52,6 +52,13 @@ export const squashMergeRpc = defineRpc({
   output: z.object({ message: z.string() }),
 });
 
+/** Moves a PR to trunk; the server reads trunk itself, so this cannot set any other base. */
+export const retargetToTrunkRpc = defineRpc({
+  name: "factory.pr.retarget-to-trunk",
+  input: PrTargetSchema,
+  output: z.object({ message: z.string() }),
+});
+
 export const openBranchRpc = defineRpc({
   name: "factory.pr.open-branch",
   input: PrTargetSchema,

@@ -1,6 +1,6 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { RpcInput } from "@getpaseo/plugin";
-import type { PrStack, prStackRpc } from "../shared/pr-stack";
+import type { Pr, PrStack, prStackRpc } from "../shared/pr-stack";
 import { gh, repoId, repoInfo } from "./gh";
 import { findGitStack } from "./git-stack";
 import { reusableWorktree } from "./checkout";
@@ -45,6 +45,28 @@ export async function listOpenPrs(directory: string): Promise<GhPr[]> {
   return JSON.parse(list) as GhPr[];
 }
 
+const PR_STATE = { OPEN: "open", CLOSED: "closed", MERGED: "merged" } as const;
+
+/** The newest same-repository PR from `branch`; a fork can use the same branch name. */
+async function newestPrFrom(directory: string, branch: string): Promise<Pr["basePr"]> {
+  const list = JSON.parse(
+    await gh(directory, [
+      "pr",
+      "list",
+      "--head",
+      branch,
+      "--state",
+      "all",
+      "--limit",
+      "10",
+      "--json",
+      "number,state,isCrossRepository",
+    ]),
+  ) as { number: number; state: keyof typeof PR_STATE; isCrossRepository: boolean }[];
+  const pr = list.find((candidate) => !candidate.isCrossRepository);
+  return pr ? { number: pr.number, state: PR_STATE[pr.state] } : null;
+}
+
 export async function listPrStack(
   { directory, scope }: RpcInput<typeof prStackRpc>,
   paseo: PaseoApi,
@@ -72,7 +94,15 @@ export async function listPrStack(
   const fallback = related !== null && related.size === 0;
   const filtered = related !== null && !fallback;
   const groups = filtered ? scopeGroups(allGroups, related) : allGroups;
-  for (const pr of groups.flatMap((group) => group.prs)) {
+  const shown = groups.flatMap((group) => group.prs);
+  await Promise.all(
+    shown
+      .filter((pr) => pr.retargetTo !== null)
+      .map(async (pr) => {
+        pr.basePr = await newestPrFrom(directory, pr.base).catch(() => null);
+      }),
+  );
+  for (const pr of shown) {
     pr.threads = threads.get(pr.number) ?? 0;
     pr.canSquash = repo.canSquash && pr.base === trunk && pr.builtOn === null;
     pr.worktree =

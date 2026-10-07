@@ -24,6 +24,10 @@ const PrSchema = z.object({
   depth: z.number(),
   /** The viewer may squash-merge this PR, and it targets trunk without being built on another PR. */
   canSquash: z.boolean(),
+  /** Set on a PR whose base is another branch with no open PR of yours: the trunk to move it to. */
+  retargetTo: z.string().nullable(),
+  /** With `retargetTo`: the newest PR from the base branch, such as a parent that was merged. */
+  basePr: z.object({ number: z.number(), state: z.enum(["open", "closed", "merged"]) }).nullable(),
   /** Set when the branch is built on this PR's branch, but the PR targets another base. */
   builtOn: z.number().nullable(),
   /** Path of the local worktree that has the PR branch checked out. */

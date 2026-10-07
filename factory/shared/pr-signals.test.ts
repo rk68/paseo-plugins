@@ -18,6 +18,8 @@ function pr(extra: Partial<Pr> = {}): Pr {
     merge: "ready",
     depth: 0,
     canSquash: false,
+    retargetTo: null,
+    basePr: null,
     builtOn: null,
     worktree: null,
     threads: 0,
@@ -87,6 +89,18 @@ describe("prSignals", () => {
     ]);
   });
 
+  it("names what became of a base branch with no open PR of yours", () => {
+    const orphan = (basePr: Pr["basePr"]) =>
+      labels(pr({ base: "feat-a", retargetTo: "main", basePr }));
+    expect(orphan({ number: 7, state: "merged" })[0]).toBe("danger:Base #7 merged");
+    expect(orphan({ number: 7, state: "closed" })[0]).toBe("danger:Base #7 closed");
+    expect(orphan({ number: 7, state: "open" })).toEqual([
+      "success:Ready to merge",
+      "muted:Stacked on #7",
+    ]);
+    expect(orphan(null)[0]).toBe("danger:Base feat-a has no open PR");
+  });
+
   it("flags a stacked branch that targets trunk", () => {
     expect(labels(pr({ builtOn: 101, merge: "unknown" }))).toEqual([
       "warning:Built on #101, targets main",
@@ -116,6 +130,19 @@ describe("prActions", () => {
     expect(prActions(pr({ canSquash: false, ci: "pass" }))).toEqual(["checkout"]);
     expect(prActions(pr({ canSquash: true, merge: "blocked" }))).toEqual(["checkout"]);
     expect(prActions(pr({ canSquash: true, threads: 1 }))).toEqual(["comments", "checkout"]);
+  });
+
+  it("offers to move a PR to trunk unless its base is someone else's open PR", () => {
+    const orphan = (basePr: Pr["basePr"], extra: Partial<Pr> = {}) =>
+      prActions(pr({ base: "feat-a", retargetTo: "main", basePr, ...extra }));
+    expect(orphan({ number: 7, state: "merged" })).toEqual(["retarget", "checkout"]);
+    expect(orphan(null)).toEqual(["retarget", "checkout"]);
+    expect(orphan({ number: 7, state: "open" })).toEqual(["checkout"]);
+    expect(orphan({ number: 7, state: "merged" }, { merge: "conflicts" })).toEqual([
+      "retarget",
+      "conflicts",
+      "checkout",
+    ]);
   });
 
   it("offers only the agent while a task runs, and the agent after it ends", () => {

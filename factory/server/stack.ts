@@ -152,6 +152,8 @@ export function buildPrGroups(
       merge: mergeStatus(pr),
       depth,
       canSquash: false,
+      retargetTo: depth === 0 && pr.baseRefName !== trunk ? trunk : null,
+      basePr: null,
       builtOn: parent && parent.headRefName !== pr.baseRefName ? parent.number : null,
       worktree: null,
       threads: 0,

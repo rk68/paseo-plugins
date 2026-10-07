@@ -6,6 +6,7 @@ import { Pressable, Text, View } from "react-native";
 import {
   markReadyRpc,
   openBranchRpc,
+  retargetToTrunkRpc,
   squashMergeRpc,
   startTaskRpc,
   type TaskKind,
@@ -16,6 +17,7 @@ import type { Pr } from "../shared/pr-stack";
 import { usePanel } from "./panel-context";
 
 const ACTION_ICON: Record<PrAction, string> = {
+  retarget: "GitCompareArrows",
   update: "GitPullRequestArrow",
   conflicts: "GitMerge",
   ci: "Wrench",
@@ -27,6 +29,7 @@ const ACTION_ICON: Record<PrAction, string> = {
 };
 
 const PENDING_LABEL: Record<PrAction, string> = {
+  retarget: "Changing base...",
   update: "Updating...",
   conflicts: "Starting...",
   ci: "Starting...",
@@ -38,9 +41,12 @@ const PENDING_LABEL: Record<PrAction, string> = {
 };
 // A merge cannot be undone, so it takes a second press within this window.
 const CONFIRM_MS = 4_000;
+const RECHECK_MS = 5_000;
 
 function actionLabel(action: PrAction, pr: Pr, confirmingMerge: boolean): string {
   switch (action) {
+    case "retarget":
+      return `Change base to ${pr.retargetTo}`;
     case "update":
       return "Update branch";
     case "conflicts":
@@ -83,6 +89,15 @@ export function QuickActions({ pr }: { pr: Pr }) {
       refresh();
     },
   });
+  const retargetToTrunk = useRpc(retargetToTrunkRpc);
+  const retarget = useMutation({
+    mutationFn: () => retargetToTrunk({ directory, number: pr.number }),
+    onSuccess: () => {
+      refresh();
+      // GitHub computes conflicts after a base change, so the first refresh can miss them.
+      setTimeout(refresh, RECHECK_MS);
+    },
+  });
   const markReady = useRpc(markReadyRpc);
   const ready = useMutation({
     mutationFn: () => markReady({ directory, number: pr.number }),
@@ -101,7 +116,8 @@ export function QuickActions({ pr }: { pr: Pr }) {
   }, [confirmingMerge]);
 
   let pending: PrAction | null = null;
-  if (update.isPending) pending = "update";
+  if (retarget.isPending) pending = "retarget";
+  else if (update.isPending) pending = "update";
   else if (checkout.isPending) pending = "checkout";
   else if (ready.isPending) pending = "ready";
   else if (merge.isPending) pending = "merge";
@@ -111,7 +127,8 @@ export function QuickActions({ pr }: { pr: Pr }) {
   const run = useCallback(
     (action: PrAction) => {
       if (action !== "merge") setConfirmingMerge(false);
-      if (action === "update") update.mutate();
+      if (action === "retarget") retarget.mutate();
+      else if (action === "update") update.mutate();
       else if (action === "checkout") checkout.mutate();
       else if (action === "ready") ready.mutate();
       else if (action === "merge") {
@@ -121,12 +138,13 @@ export function QuickActions({ pr }: { pr: Pr }) {
         if (agentId) openAgent?.(agentId);
       } else task.mutate(action);
     },
-    [update, task, checkout, ready, merge, confirmingMerge, agentId, openAgent],
+    [retarget, update, task, checkout, ready, merge, confirmingMerge, agentId, openAgent],
   );
 
   const actions = prActions(pr).filter((action) => action !== "open-agent" || openAgent);
   if (!actions.length) return null;
-  const error = update.error ?? task.error ?? checkout.error ?? ready.error ?? merge.error;
+  const error =
+    retarget.error ?? update.error ?? task.error ?? checkout.error ?? ready.error ?? merge.error;
   return (
     <View style={styles.quickActions}>
       <View style={styles.actions}>

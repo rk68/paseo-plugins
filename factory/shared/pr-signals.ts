@@ -10,7 +10,14 @@ export interface PrSignal {
   busy?: boolean;
 }
 
-export type PrAction = "update" | TaskKind | "ready" | "merge" | "checkout" | "open-agent";
+export type PrAction =
+  | "retarget"
+  | "update"
+  | TaskKind
+  | "ready"
+  | "merge"
+  | "checkout"
+  | "open-agent";
 
 export const TONE_RANK: Record<Tone, number> = { danger: 0, warning: 1, success: 2, muted: 3 };
 const MAX_NAMED_CHECKS = 2;
@@ -42,6 +49,19 @@ export function checkCounts(pr: Pr) {
   };
 }
 
+function baseSignal(pr: Pr): PrSignal | null {
+  if (pr.retargetTo === null) return null;
+  const { basePr } = pr;
+  if (!basePr) return { tone: "danger", label: `Base ${pr.base} has no open PR` };
+  if (basePr.state === "open") return { tone: "muted", label: `Stacked on #${basePr.number}` };
+  return { tone: "danger", label: `Base #${basePr.number} ${basePr.state}` };
+}
+
+/** A base that is open belongs to someone else's PR: the stack is real, so it keeps its base. */
+function canRetarget(pr: Pr): boolean {
+  return pr.retargetTo !== null && pr.basePr?.state !== "open";
+}
+
 export function commentsLabel(count: number): string {
   return count === 1 ? "1 unresolved comment" : `${count} unresolved comments`;
 }
@@ -51,6 +71,8 @@ export function prSignals(pr: Pr): PrSignal[] {
   const task = activeTask(pr);
   const signals: PrSignal[] = [];
   if (task) signals.push({ tone: "warning", label: TASK_RUNNING_LABEL[task], busy: true });
+  const base = baseSignal(pr);
+  if (base) signals.push(base);
   if (pr.merge === "conflicts" && task !== "conflicts") {
     signals.push({ tone: "danger", label: "Conflicts" });
   }
@@ -89,6 +111,7 @@ export function prSignals(pr: Pr): PrSignal[] {
 export function prActions(pr: Pr): PrAction[] {
   if (activeTask(pr)) return ["open-agent"];
   const actions: PrAction[] = [];
+  if (canRetarget(pr)) actions.push("retarget");
   if (pr.merge === "behind") actions.push("update");
   if (pr.merge === "conflicts") actions.push("conflicts");
   if (pr.ci === "fail") actions.push("ci");
