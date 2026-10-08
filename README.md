@@ -66,6 +66,8 @@ Then turn on **Settings → Plugins → Enable plugins**, if it is not on alread
 
   To land a stack, merge the top PR, then press Change base to main on the next PR. If the new base gives conflicts or failing CI, the row offers Resolve conflicts or Fix CI. When the row reads "Ready to merge", Squash and merge shows. Change base to main does not show when the base is someone else's open PR.
 
+  The PR details also have Close PR. It runs `gh pr close` after a second press to confirm, and keeps the branch, so PRs stacked on it offer Change base to main.
+
   Squash and merge shows only on a row that reads "Ready to merge", targets trunk directly, and only when the repository allows squash merges and you have write access.
 
   Agents run Claude Opus 5.5 in a new worktree that starts at the PR head. They never rebase, force-push, change the base or merge.

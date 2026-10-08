@@ -16,7 +16,7 @@ import { checkCounts, prSignals, prTone, type Tone } from "../shared/pr-signals"
 import { type Check, type Pr, type PrGroup, prStackRpc } from "../shared/pr-stack";
 import { type PanelContextValue, PanelProvider, usePanel } from "./panel-context";
 import { AutomationView } from "./automation-view";
-import { QuickActions } from "./quick-actions";
+import { ClosePrButton, QuickActions, type RowActions, useRowActions } from "./quick-actions";
 import { Spinner } from "./spinner";
 import { createStyles, toneColor } from "./styles";
 
@@ -384,6 +384,7 @@ function PrRow({ pr, open, onToggle }: { pr: Pr; open: boolean; onToggle(number:
   const { theme, styles, ageAt } = usePanel();
   const toggle = useCallback(() => onToggle(pr.number), [onToggle, pr.number]);
   const signals = useMemo(() => prSignals(pr), [pr]);
+  const actions = useRowActions(pr);
   const [lead, ...rest] = signals;
   const a11yState = useMemo(() => ({ expanded: open }), [open]);
   const tone = lead?.tone ?? "muted";
@@ -432,14 +433,14 @@ function PrRow({ pr, open, onToggle }: { pr: Pr; open: boolean; onToggle(number:
           />
         </Pressable>
         {/* Outside the row button: web cannot nest buttons. */}
-        <QuickActions pr={pr} />
-        {open ? <PrDetails pr={pr} /> : null}
+        <QuickActions pr={pr} actions={actions} />
+        {open ? <PrDetails pr={pr} actions={actions} /> : null}
       </View>
     </View>
   );
 }
 
-function PrDetails({ pr }: { pr: Pr }) {
+function PrDetails({ pr, actions }: { pr: Pr; actions: RowActions }) {
   const { styles } = usePanel();
   const { passed, skipped } = checkCounts(pr);
   const attention = pr.checks.filter(
@@ -461,6 +462,7 @@ function PrDetails({ pr }: { pr: Pr }) {
         <Text style={styles.meta}>No checks reported</Text>
       )}
       <ExternalLink href={pr.url}>Open on GitHub</ExternalLink>
+      <ClosePrButton actions={actions} />
     </View>
   );
 }

@@ -2,6 +2,7 @@ import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext, PluginSettings } from "@getpaseo/plugin/server";
 import type {
   archiveTasksRpc,
+  closePrRpc,
   factorySettings,
   markReadyRpc,
   retargetToTrunkRpc,
@@ -29,6 +30,12 @@ export async function retargetToTrunk({ directory, number }: RpcInput<typeof ret
   const { trunk } = await repoInfo(directory);
   await gh(directory, ["pr", "edit", String(number), "--base", trunk]);
   return { message: `Moved #${number} to ${trunk}` };
+}
+
+// No --delete-branch: a worktree can hold the local branch, and a stacked PR can target it.
+export async function closePr({ directory, number }: RpcInput<typeof closePrRpc>) {
+  const output = await gh(directory, ["pr", "close", String(number)]);
+  return { message: output.trim() || `Closed #${number}` };
 }
 
 // No --delete-branch: gh would also delete the local branch, which a worktree can hold.
