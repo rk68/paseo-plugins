@@ -1,10 +1,11 @@
 import { useRpc } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useMutation } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import { Pressable, Text, View } from "react-native";
 import {
   archiveTasksRpc,
+  closePrRpc,
   markReadyRpc,
   openBranchRpc,
   retargetToTrunkRpc,
@@ -16,6 +17,8 @@ import {
 import { type PrAction, prActions } from "../shared/pr-signals";
 import type { Pr } from "../shared/pr-stack";
 import { usePanel } from "./panel-context";
+import { pressRowAction, type RowAction, rowActionEnabled } from "./row-actions";
+import { useArmed } from "./use-armed";
 
 const ACTION_ICON: Record<PrAction, string> = {
   retarget: "GitCompareArrows",
@@ -42,8 +45,6 @@ const PENDING_LABEL: Record<PrAction, string> = {
   "open-agent": "Opening...",
   "archive-task": "Archiving...",
 };
-// A merge cannot be undone, so it takes a second press within this window.
-const CONFIRM_MS = 4_000;
 const RECHECK_MS = 5_000;
 
 function actionLabel(action: PrAction, pr: Pr, confirmingMerge: boolean): string {
@@ -73,9 +74,9 @@ function actionLabel(action: PrAction, pr: Pr, confirmingMerge: boolean): string
   }
 }
 
-/** The next steps a PR needs, one click each, visible without expanding the row. */
-export function QuickActions({ pr }: { pr: Pr }) {
-  const { directory, openAgent, openWorkspace, refresh, styles } = usePanel();
+/** The state and runner of every action on one PR row; the chips and the details share it. */
+export function useRowActions(pr: Pr) {
+  const { directory, openAgent, openWorkspace, refresh } = usePanel();
   const updateBranch = useRpc(updateBranchRpc);
   const startTask = useRpc(startTaskRpc);
   const update = useMutation({
@@ -118,43 +119,58 @@ export function QuickActions({ pr }: { pr: Pr }) {
     mutationFn: () => squashMerge({ directory, number: pr.number, headOid: pr.headOid }),
     onSuccess: refresh,
   });
-  const [confirmingMerge, setConfirmingMerge] = useState(false);
-  useEffect(() => {
-    if (!confirmingMerge) return;
-    const timer = setTimeout(() => setConfirmingMerge(false), CONFIRM_MS);
-    return () => clearTimeout(timer);
-  }, [confirmingMerge]);
+  const closePr = useRpc(closePrRpc);
+  const close = useMutation({
+    mutationFn: () => closePr({ directory, number: pr.number }),
+    onSuccess: refresh,
+  });
+  const [armed, setArmed] = useArmed<RowAction>();
 
-  let pending: PrAction | null = null;
+  let pending: RowAction | null = null;
   if (retarget.isPending) pending = "retarget";
   else if (update.isPending) pending = "update";
   else if (checkout.isPending) pending = "checkout";
   else if (ready.isPending) pending = "ready";
   else if (merge.isPending) pending = "merge";
+  else if (close.isPending) pending = "close";
   else if (archive.isPending) pending = "archive-task";
   else if (task.isPending) pending = task.variables ?? null;
   const agentId = task.data?.agentId ?? pr.task?.agentId;
 
   const run = useCallback(
-    (action: PrAction) => {
-      if (action !== "merge") setConfirmingMerge(false);
+    (action: RowAction) => {
+      if (!rowActionEnabled(pending, action)) return;
+      const next = pressRowAction(armed, action);
+      setArmed(next.armed);
+      if (!next.fire) return;
       if (action === "retarget") retarget.mutate();
       else if (action === "update") update.mutate();
       else if (action === "checkout") checkout.mutate();
       else if (action === "ready") ready.mutate();
       else if (action === "archive-task") archive.mutate();
-      else if (action === "merge") {
-        if (confirmingMerge) merge.mutate();
-        setConfirmingMerge(!confirmingMerge);
-      } else if (action === "open-agent") {
+      else if (action === "merge") merge.mutate();
+      else if (action === "close") close.mutate();
+      else if (action === "open-agent") {
         if (agentId) openAgent?.(agentId);
       } else task.mutate(action);
     },
-    [retarget, update, task, checkout, ready, merge, archive, confirmingMerge, agentId, openAgent],
+    [
+      pending,
+      armed,
+      setArmed,
+      retarget,
+      update,
+      task,
+      checkout,
+      ready,
+      archive,
+      merge,
+      close,
+      agentId,
+      openAgent,
+    ],
   );
 
-  const actions = prActions(pr).filter((action) => action !== "open-agent" || openAgent);
-  if (!actions.length) return null;
   const error =
     retarget.error ??
     update.error ??
@@ -162,18 +178,32 @@ export function QuickActions({ pr }: { pr: Pr }) {
     checkout.error ??
     ready.error ??
     merge.error ??
+    close.error ??
     archive.error;
+  return { armed, pending, run, error, canOpenAgent: openAgent !== undefined };
+}
+
+export type RowActions = ReturnType<typeof useRowActions>;
+
+/** The next steps a PR needs, one click each, visible without expanding the row. */
+export function QuickActions({ pr, actions }: { pr: Pr; actions: RowActions }) {
+  const { styles } = usePanel();
+  const { armed, pending, run, error, canOpenAgent } = actions;
+  const chips = prActions(pr).filter((action) => action !== "open-agent" || canOpenAgent);
+  if (!chips.length && !error) return null;
   return (
     <View style={styles.quickActions}>
       <View style={styles.actions}>
-        {actions.map((action) => (
+        {chips.map((action) => (
           <ActionChip
             key={action}
             action={action}
             label={
-              pending === action ? PENDING_LABEL[action] : actionLabel(action, pr, confirmingMerge)
+              pending === action
+                ? PENDING_LABEL[action]
+                : actionLabel(action, pr, armed === "merge")
             }
-            disabled={pending !== null && action !== "open-agent"}
+            disabled={!rowActionEnabled(pending, action)}
             onRun={run}
           />
         ))}
@@ -206,5 +236,28 @@ function ActionChip({
       <Icon name={ACTION_ICON[action]} size={12} color={theme.colors.foregroundMuted} />
       <Text style={styles.buttonText}>{label}</Text>
     </Pressable>
+  );
+}
+
+/** Closes the PR without deleting its branch; PRs stacked on it then offer a base change. */
+export function ClosePrButton({ actions }: { actions: RowActions }) {
+  const { styles, theme } = usePanel();
+  const { armed, pending, run } = actions;
+  const press = useCallback(() => run("close"), [run]);
+  const enabled = rowActionEnabled(pending, "close");
+  let label = armed === "close" ? "Confirm close" : "Close PR";
+  if (pending === "close") label = "Closing...";
+  return (
+    <View style={styles.actions}>
+      <Pressable
+        accessibilityRole="button"
+        disabled={!enabled}
+        onPress={press}
+        style={enabled ? styles.button : styles.buttonBusy}
+      >
+        <Icon name="GitPullRequestClosed" size={12} color={theme.colors.foregroundMuted} />
+        <Text style={styles.buttonText}>{label}</Text>
+      </Pressable>
+    </View>
   );
 }
