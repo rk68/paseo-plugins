@@ -8,7 +8,7 @@ import {
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { ExternalLink } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { factorySettings } from "../shared/actions";
 import { age, orderGroups, type PrSort } from "../shared/order";
@@ -76,6 +76,17 @@ export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspace
     () => setScope((current) => (current === "branch" ? "all" : "branch")),
     [],
   );
+  // Keyed by each stack's root PR; held here so a refresh or a scope change keeps it.
+  const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(new Set());
+  const toggleStack = useCallback(
+    (root: number) =>
+      setCollapsed((current) => {
+        const next = new Set(current);
+        if (!next.delete(root)) next.add(root);
+        return next;
+      }),
+    [],
+  );
   const query = usePrStack(directory, scope);
   const { refetch } = query;
   const refresh = useCallback(() => void refetch(), [refetch]);
@@ -124,7 +135,13 @@ export function PrStackPanel({ theme, workspaceId, navigation }: PluginWorkspace
             />
             {query.error ? <Text style={styles.errorBlock}>{query.error.message}</Text> : null}
             {query.data ? (
-              <PrList data={query.data} sort={sort} onToggleScope={toggleScope} />
+              <PrList
+                data={query.data}
+                sort={sort}
+                onToggleScope={toggleScope}
+                collapsed={collapsed}
+                onToggleStack={toggleStack}
+              />
             ) : null}
           </>
         )}
@@ -195,10 +212,14 @@ function PrList({
   data,
   sort,
   onToggleScope,
+  collapsed,
+  onToggleStack,
 }: {
   data: PrStackData;
   sort: PrSort;
   onToggleScope(): void;
+  collapsed: ReadonlySet<number>;
+  onToggleStack(root: number): void;
 }) {
   const { styles } = usePanel();
   const groups = useMemo(() => orderGroups(data.groups, sort), [data.groups, sort]);
@@ -227,21 +248,27 @@ function PrList({
           trunk={data.trunk}
           expanded={expanded}
           onToggle={toggle}
+          collapsed={collapsed.has(group.prs[0]?.number ?? -1)}
+          onToggleStack={onToggleStack}
         />
       ))}
     </>
   );
 }
 
-function summarize(groups: PrGroup[]): string {
-  const prs = groups.flatMap((group) => group.prs);
+function statusParts(prs: Pr[]): string[] {
   const tones = prs.map(prTone);
-  const parts = [`${prs.length} open`];
   const attention = tones.filter((tone) => tone === "danger" || tone === "warning").length;
   const ready = tones.filter((tone) => tone === "success").length;
+  const parts: string[] = [];
   if (attention) parts.push(`${attention} need attention`);
   if (ready) parts.push(`${ready} ready`);
-  return parts.join(" · ");
+  return parts;
+}
+
+function summarize(groups: PrGroup[]): string {
+  const prs = groups.flatMap((group) => group.prs);
+  return [`${prs.length} open`, ...statusParts(prs)].join(" · ");
 }
 
 const GROUP_TITLE: Record<PrGroup["kind"], string> = {
@@ -274,22 +301,81 @@ function Group({
   trunk,
   expanded,
   onToggle,
+  collapsed,
+  onToggleStack,
 }: {
   group: PrGroup;
   trunk: string;
   expanded: number | null;
   onToggle(number: number): void;
+  collapsed: boolean;
+  onToggleStack(root: number): void;
 }) {
   const { styles } = usePanel();
-  let title = GROUP_TITLE[group.kind];
-  if (group.kind === "independent") title = `${title} · into ${trunk}`;
-  if (group.kind === "stack") title = `Stack of ${group.prs.length} · merge top down`;
+  const rows = group.prs.map((pr) => (
+    <PrRow key={pr.number} pr={pr} open={expanded === pr.number} onToggle={onToggle} />
+  ));
+  if (group.kind === "stack") {
+    return (
+      <StackGroup group={group} collapsed={collapsed} onToggleStack={onToggleStack}>
+        {rows}
+      </StackGroup>
+    );
+  }
+  const title =
+    group.kind === "independent"
+      ? `${GROUP_TITLE[group.kind]} · into ${trunk}`
+      : GROUP_TITLE[group.kind];
   return (
-    <View style={group.kind === "stack" ? styles.stackGroup : styles.group}>
-      <Text style={group.kind === "stack" ? styles.stackTitle : styles.groupTitle}>{title}</Text>
-      {group.prs.map((pr) => (
-        <PrRow key={pr.number} pr={pr} open={expanded === pr.number} onToggle={onToggle} />
-      ))}
+    <View style={styles.group}>
+      <Text style={styles.groupTitle}>{title}</Text>
+      {rows}
+    </View>
+  );
+}
+
+function StackGroup({
+  group,
+  collapsed,
+  onToggleStack,
+  children,
+}: {
+  group: PrGroup;
+  collapsed: boolean;
+  onToggleStack(root: number): void;
+  children: ReactNode;
+}) {
+  const { styles, theme } = usePanel();
+  const root = group.prs[0]?.number ?? -1;
+  const toggle = useCallback(() => onToggleStack(root), [onToggleStack, root]);
+  const a11yState = useMemo(() => ({ expanded: !collapsed }), [collapsed]);
+  const summary = [
+    group.prs.map((pr) => `#${pr.number}`).join(" "),
+    ...statusParts(group.prs),
+  ].join(" · ");
+  return (
+    <View style={styles.stackGroup}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={a11yState}
+        accessibilityLabel={`Stack of ${group.prs.length}. ${collapsed ? "Expand" : "Collapse"}`}
+        onPress={toggle}
+        style={styles.stackHeader}
+      >
+        <Icon
+          name={collapsed ? "ChevronRight" : "ChevronDown"}
+          size={12}
+          color={theme.colors.foregroundMuted}
+        />
+        <Text style={styles.stackTitle}>{`Stack of ${group.prs.length} · merge top down`}</Text>
+      </Pressable>
+      {collapsed ? (
+        <Text style={styles.stackSummary} numberOfLines={1}>
+          {summary}
+        </Text>
+      ) : (
+        children
+      )}
     </View>
   );
 }
