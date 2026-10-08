@@ -56,13 +56,16 @@ export function createStyles(theme: Theme) {
       borderColor: colors.border,
       borderRadius: 8,
     },
-    stackTitle: {
-      color: colors.foregroundMuted,
-      fontSize: 12,
-      fontWeight: "500" as const,
+    stackHeader: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 4,
       paddingHorizontal: 8,
       marginBottom: 2,
     },
+    stackTitle: { color: colors.foregroundMuted, fontSize: 12, fontWeight: "500" as const },
+    // Indented to the title, past the chevron and its gap.
+    stackSummary: { color: colors.foregroundMuted, fontSize: 12, paddingLeft: 24, paddingRight: 8 },
     sortButton: {
       flexDirection: "row" as const,
       alignItems: "center" as const,

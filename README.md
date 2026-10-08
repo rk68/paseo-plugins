@@ -48,7 +48,7 @@ Then turn on **Settings → Plugins → Enable plugins**, if it is not on alread
   </tr>
 </table>
 
-- **Stacks.** PRs built on another PR's branch are grouped in merge order on a rail. A stack is found from the PR base and from git ancestry, so a branch built on another branch is found even when its PR targets `main`.
+- **Stacks.** PRs built on another PR's branch are grouped in merge order on a rail. A stack is found from the PR base and from git ancestry, so a branch built on another branch is found even when its PR targets `main`. Press a stack's title to collapse it to one line with its PR numbers and status.
 - **One status line for each PR**, most urgent first: conflicts, failing CI with check names, changes requested, unresolved comments, needs update, CI running, review required, ready to merge.
 - **One-click actions on every row:**
 
