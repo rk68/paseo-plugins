@@ -40,7 +40,18 @@ const FinishedJobSchema = z.object({
 export const listJobsRpc = defineRpc({
   name: "lab.jobs.list",
   input: z.object({ sshHost: z.string(), logPattern: z.string() }),
-  output: z.object({ queued: z.array(QueuedJobSchema), finished: z.array(FinishedJobSchema) }),
+  output: z.object({
+    queued: z.array(QueuedJobSchema),
+    finished: z.array(FinishedJobSchema),
+    /** Absent for Slurm hosts. A workstation has no queue, so the panel shows who uses its GPU. */
+    machine: z
+      .object({
+        kind: z.literal("workstation"),
+        gpu: z.string().nullable(),
+        gpuUse: z.array(z.object({ user: z.string(), mib: z.number() })),
+      })
+      .optional(),
+  }),
 });
 
 export const jobLogRpc = defineRpc({

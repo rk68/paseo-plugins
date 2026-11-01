@@ -3,6 +3,8 @@ import type { QueuedJob } from "./cluster";
 import {
   duration,
   finishedStatus,
+  gpuSummary,
+  hostsOf,
   queueTree,
   slurmSeconds,
   timeAgo,
@@ -135,5 +137,31 @@ describe("queueTree", () => {
       [1, 0],
       [2, 0],
     ]);
+  });
+});
+
+describe("workstation formatting", () => {
+  it("splits the host setting and drops repeats", () => {
+    expect(hostsOf("sparks, spark-06aa  spark-9ea3,sparks")).toEqual([
+      "sparks",
+      "spark-06aa",
+      "spark-9ea3",
+    ]);
+    expect(hostsOf("  ")).toEqual([]);
+  });
+
+  it("summarises GPU use per user", () => {
+    expect(gpuSummary("NVIDIA GB10", [{ user: "rishi", mib: 30720 }])).toBe(
+      "NVIDIA GB10 · rishi 30.0 GB",
+    );
+    expect(gpuSummary(null, [])).toBe("GPU · idle");
+  });
+
+  it("labels logs that ended", () => {
+    expect(finishedStatus({ state: "ENDED", elapsed: "", exitCode: "" })).toEqual({
+      tone: "success",
+      label: "Ended",
+    });
+    expect(finishedStatus({ state: "ERRORED", elapsed: "", exitCode: "" }).tone).toBe("danger");
   });
 });
