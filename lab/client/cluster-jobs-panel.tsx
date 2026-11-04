@@ -19,6 +19,8 @@ import {
 import {
   duration,
   finishedStatus,
+  gpuSummary,
+  hostsOf,
   type JobStatus,
   limitUsed,
   metaTail,
@@ -70,15 +72,16 @@ export function ClusterJobs({ theme }: { theme: Theme }) {
   else if (editingHost || !settings.values.sshHost) {
     body = <HostForm settings={settings} onDone={closeEditor} />;
   } else {
-    body = (
+    body = hostsOf(settings.values.sshHost).map((host) => (
       <Jobs
-        sshHost={settings.values.sshHost}
+        key={host}
+        sshHost={host}
         logPattern={settings.values.logPattern}
         theme={theme}
         styles={styles}
         onEditHost={editHost}
       />
-    );
+    ));
   }
 
   return <View style={styles.content}>{body}</View>;
@@ -100,10 +103,10 @@ function HostForm({ settings, onDone }: { settings: ReadySettings; onDone(): voi
   return (
     <SettingsCard>
       <SettingsInput
-        label="SSH host"
-        hint="A host from ~/.ssh/config that runs Slurm. It must log in without a password"
+        label="SSH hosts"
+        hint="One or more hosts from ~/.ssh/config, separated by commas. Each must log in without a password. A Slurm host shows its queue; a host without Slurm shows your running jobs (processes that write to a .log or .out file), recent logs and GPU use"
         initialValue={settings.values.sshHost}
-        placeholder="my-cluster"
+        placeholder="my-cluster, gpu-box"
         onChangeText={setHost}
         disabled={settings.saving}
         error={
@@ -114,14 +117,14 @@ function HostForm({ settings, onDone }: { settings: ReadySettings; onDone(): voi
       />
       <SettingsInput
         label="Log path pattern"
-        hint="Optional. Finds logs of jobs that finished before Paseo saw them. Uses the sbatch --output syntax"
+        hint="Optional. Finds logs of jobs that finished before Paseo saw them. Uses the sbatch --output syntax. On a host without Slurm, its folder is searched for *.log files"
         initialValue={settings.values.logPattern}
         placeholder="~/logs/%x-%j.log"
         onChangeText={setPattern}
         disabled={settings.saving}
       />
       <SettingsAction
-        label="Show this host's jobs"
+        label="Show these hosts' jobs"
         actionLabel={settings.saving ? "Saving..." : "Save"}
         disabled={settings.saving || !host.trim()}
         onPress={save}
@@ -177,40 +180,33 @@ function Jobs({
     running.length ? `${running.length} running` : "",
     waiting.length ? `${waiting.length} waiting` : "",
   ].filter(Boolean);
-  const summary = [sshHost, ...(counts.length ? counts : ["queue empty"])].join(" · ");
+  const machine = query.data?.machine;
+  const idle = machine ? "no running jobs" : "queue empty";
+  const summary = [sshHost, ...(counts.length ? counts : [idle])].join(" · ");
   const now = query.dataUpdatedAt;
 
   return (
     <>
-      <View style={styles.header}>
-        <Text style={styles.headerText} numberOfLines={1}>
-          {query.data ? summary : `${sshHost} · Connecting...`}
+      <JobsHeader
+        sshHost={sshHost}
+        summary={summary}
+        connected={query.data !== undefined}
+        fetching={query.isFetching}
+        onEditHost={onEditHost}
+        onRefresh={refresh}
+        theme={theme}
+        styles={styles}
+      />
+      {machine ? (
+        <Text style={styles.machine} numberOfLines={1}>
+          {gpuSummary(machine.gpu, machine.gpuUse)}
         </Text>
-        <View style={styles.headerActions}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Change SSH host"
-            onPress={onEditHost}
-            style={styles.iconButton}
-          >
-            <Icon name="Pencil" size={14} color={theme.colors.foregroundMuted} />
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Refresh cluster jobs"
-            onPress={refresh}
-            disabled={query.isFetching}
-            style={query.isFetching ? styles.iconButtonBusy : styles.iconButton}
-          >
-            <Icon name="RefreshCw" size={14} color={theme.colors.foregroundMuted} />
-          </Pressable>
-        </View>
-      </View>
+      ) : null}
       {query.error ? <Text style={styles.error}>{query.error.message}</Text> : null}
       {query.data && !running.length && !waiting.length && !finished.length ? (
         <Text style={styles.empty}>No jobs in the last 24 hours</Text>
       ) : null}
-      <Section title="Queue" styles={styles} visible={queue.length > 0}>
+      <Section title={machine ? "Running" : "Queue"} styles={styles} visible={queue.length > 0}>
         {shownQueue.map(({ job, depth, descendants }) => (
           <QueueRow
             key={job.id}
@@ -244,6 +240,53 @@ function Jobs({
         ))}
       </Section>
     </>
+  );
+}
+
+function JobsHeader({
+  sshHost,
+  summary,
+  connected,
+  fetching,
+  onEditHost,
+  onRefresh,
+  theme,
+  styles,
+}: {
+  sshHost: string;
+  summary: string;
+  connected: boolean;
+  fetching: boolean;
+  onEditHost(): void;
+  onRefresh(): void;
+  theme: Theme;
+  styles: Styles;
+}) {
+  return (
+    <View style={styles.header}>
+      <Text style={styles.headerText} numberOfLines={1}>
+        {connected ? summary : `${sshHost} · Connecting...`}
+      </Text>
+      <View style={styles.headerActions}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Change SSH host"
+          onPress={onEditHost}
+          style={styles.iconButton}
+        >
+          <Icon name="Pencil" size={14} color={theme.colors.foregroundMuted} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Refresh cluster jobs"
+          onPress={onRefresh}
+          disabled={fetching}
+          style={fetching ? styles.iconButtonBusy : styles.iconButton}
+        >
+          <Icon name="RefreshCw" size={14} color={theme.colors.foregroundMuted} />
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -638,6 +681,7 @@ function createStyles(theme: Theme) {
       paddingHorizontal: 8,
     },
     headerText: { color: colors.foregroundMuted, fontSize: 12, flexShrink: 1 },
+    machine: { color: colors.foregroundMuted, fontSize: 12, paddingHorizontal: 8 },
     headerActions: { flexDirection: "row" as const, gap: 4 },
     iconButton,
     iconButtonBusy: { ...iconButton, opacity: 0.5 },

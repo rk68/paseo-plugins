@@ -89,6 +89,10 @@ export function finishedStatus(
       return { tone: "danger", label: "Node failure" };
     case "PREEMPTED":
       return { tone: "warning", label: `Preempted after ${ran}` };
+    case "ENDED":
+      return { tone: "success", label: "Ended" };
+    case "ERRORED":
+      return { tone: "danger", label: "Ended with an error in its log" };
     case "CANCELLED":
       return {
         tone: "muted",
@@ -192,4 +196,15 @@ export function metaTail(...parts: string[]): string {
     .filter(Boolean)
     .map((part) => ` · ${part}`)
     .join("");
+}
+
+/** The hosts of the SSH host setting, which takes one or more names separated by commas or spaces. */
+export function hostsOf(setting: string): string[] {
+  return [...new Set(setting.split(/[\s,]+/).filter(Boolean))];
+}
+
+/** "NVIDIA GB10 · rishi 29.7 GB, arun 14.5 GB", or "· idle" when no process holds GPU memory. */
+export function gpuSummary(gpu: string | null, use: { user: string; mib: number }[]): string {
+  const holders = use.map(({ user, mib }) => `${user} ${(mib / 1024).toFixed(1)} GB`).join(", ");
+  return [gpu ?? "GPU", holders || "idle"].join(" · ");
 }

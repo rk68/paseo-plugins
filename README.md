@@ -7,7 +7,7 @@ Two plugins for [Paseo](https://paseo.sh). Each one adds a panel to the right si
 | Plugin    | Panel    | Use it for                                                                                                                    |
 | --------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `factory` | PR stack | Your open pull requests: merge order, stacks, CI, reviews and conflicts, with one-click fixes and agents that fix PRs for you |
-| `lab`     | Cluster  | Your Slurm jobs on a remote cluster: queue pipelines, progress, finished jobs and logs                                        |
+| `lab`     | Cluster  | Your jobs on remote machines: a Slurm queue, or running jobs and GPU use on hosts without Slurm, with logs                    |
 | `lab`     | Runs     | A left-sidebar screen of every agent that works or waits for you, with its subagents, progress and the cluster queue          |
 
 ## Install
@@ -30,9 +30,9 @@ Then turn on **Settings → Plugins → Enable plugins**, if it is not on alread
 
 - Paseo 0.9.1 or later.
 - `factory`: `gh` logged in with access to your repositories, and `git`.
-- `lab`: an SSH host in `~/.ssh/config` that runs Slurm and logs in without a password prompt.
+- `lab`: one or more SSH hosts in `~/.ssh/config` that log in without a password prompt. Hosts without Slurm must be Linux (the panel reads `/proc`).
 
-**Security.** Plugins run without a sandbox. `factory` runs `gh` and `git` in your repositories and can start agents that push to your PR branches. `lab` runs `ssh` to the host you configure.
+**Security.** Plugins run without a sandbox. `factory` runs `gh` and `git` in your repositories and can start agents that push to your PR branches. `lab` runs `ssh` to the hosts you configure.
 
 ## factory: PR stack
 
@@ -83,12 +83,13 @@ Then turn on **Settings → Plugins → Enable plugins**, if it is not on alread
     <td width="33%"><img src="docs/screenshots/cluster.png" alt="Cluster panel with a running job and finished jobs"></td>
     <td>
 
-- Connects to a Slurm host over SSH and refreshes every 30 seconds.
+- Connects to each configured host over SSH (separate hosts with commas) and refreshes every 30 seconds.
 - **Queue.** Running and waiting jobs as dependency pipelines that you can collapse into their first job.
   - Running jobs show a spinner, elapsed time against the time limit, a progress bar and the last log line.
   - Waiting jobs show the reason in plain words, such as `After #1517` or `Over CPU quota`.
 - **Finished in the last 24 h.** The result, run time, exit code or signal, and age.
 - **Logs.** Tap a job for the last 60 lines of its log, refreshed every 15 seconds. Logs of finished jobs are found through the optional **Log path pattern** setting, in sbatch `--output` syntax such as `~/logs/%x-%j.log`.
+- **Hosts without Slurm.** A workstation shows its GPU and the GPU memory each user holds. Every process of yours whose output goes to a `.log` or `.out` file counts as a running job, named after that file, with its run time, GPU use and last log line. Logs in the same folders, and in the folder of the log path pattern, that changed in the last 24 hours show as finished; a log that ends with a traceback or an error is marked red.
 
 </td>
   </tr>

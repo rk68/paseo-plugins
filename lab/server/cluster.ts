@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { RpcInput } from "@getpaseo/plugin";
 import type { JobList, jobLogRpc, listJobsRpc, QueuedJob } from "../shared/cluster";
+import { parseWorkstation, patternDir, WORKSTATION_MARKER, workstationScript } from "./workstation";
 import {
   assertSshHost,
   fillLogPattern,
@@ -38,6 +39,8 @@ const SSH_OPTIONS = [
 interface HostLogs {
   paths: Map<number, string>;
   patterns: Set<string>;
+  /** Folders of logs seen on a workstation, so a job's log stays listed after the job ends. */
+  dirs: Set<string>;
 }
 
 // squeue only reports queued jobs, so remember their log paths and the --output patterns behind them.
@@ -46,7 +49,7 @@ const logsByHost = new Map<string, HostLogs>();
 function hostLogs(host: string): HostLogs {
   let logs = logsByHost.get(host);
   if (!logs) {
-    logs = { paths: new Map(), patterns: new Set() };
+    logs = { paths: new Map(), patterns: new Set(), dirs: new Set() };
     logsByHost.set(host, logs);
   }
   return logs;
@@ -93,13 +96,23 @@ export async function listJobs({
   sshHost,
   logPattern: configured,
 }: RpcInput<typeof listJobsRpc>): Promise<JobList> {
+  const logs = hostLogs(sshHost);
+  const configuredDir = patternDir(configured);
+  const workstation = workstationScript([...(configuredDir ? [configuredDir] : []), ...logs.dirs]);
   const output = await ssh(
     sshHost,
-    `squeue --me --json && echo ${SEPARATOR} && sacct -X -n -P -S now-24hours -o JobIDRaw,JobID,JobName,State,Elapsed,ExitCode,End`,
+    `if command -v squeue >/dev/null 2>&1; then squeue --me --json && echo ${SEPARATOR} && sacct -X -n -P -S now-24hours -o JobIDRaw,JobID,JobName,State,Elapsed,ExitCode,End; else ${workstation}\nfi`,
   );
+  if (output.includes(WORKSTATION_MARKER)) {
+    const parsed = parseWorkstation(output, FINISHED_LIMIT);
+    for (const [id, path] of parsed.paths) {
+      logs.paths.set(id, path);
+      logs.dirs.add(path.slice(0, path.lastIndexOf("/")));
+    }
+    return parsed.list;
+  }
   const [queueText, sacctText = ""] = output.split(SEPARATOR);
   const queue = parseSqueueJson(queueText, Math.floor(Date.now() / 1000));
-  const logs = hostLogs(sshHost);
   for (const job of queue.jobs) {
     const path = queue.logPaths.get(job.id);
     if (!path) continue;
