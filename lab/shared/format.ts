@@ -1,4 +1,5 @@
 import type { FinishedJob, QueuedJob } from "./cluster";
+import type { AgentRun, Progress } from "./runs";
 
 export type Tone = "danger" | "warning" | "success" | "muted";
 
@@ -147,4 +148,48 @@ export function visibleQueue(nodes: QueueNode[], expanded: ReadonlySet<number>):
     if (node.descendants > 0 && !expanded.has(node.job.id)) collapsedDepth = node.depth;
   }
   return visible;
+}
+
+export interface RunStatus extends JobStatus {
+  /** Work in progress shows a spinner instead of a static icon. */
+  busy: boolean;
+}
+
+export function runStatus(run: Pick<AgentRun, "status" | "attention">): RunStatus {
+  if (run.attention === "permission")
+    return { tone: "warning", label: "Needs permission", busy: false };
+  if (run.status === "error" || run.attention === "error") {
+    return { tone: "danger", label: "Error", busy: false };
+  }
+  if (run.status === "running") return { tone: "muted", label: "Running", busy: true };
+  if (run.status === "initializing") return { tone: "muted", label: "Starting", busy: true };
+  if (run.attention === "finished") return { tone: "success", label: "Finished", busy: false };
+  return { tone: "muted", label: "Idle", busy: false };
+}
+
+export function progressText(
+  progress: Pick<Progress, "done" | "total" | "phase" | "note">,
+): string {
+  const count = progress.total
+    ? `${progress.done} / ${progress.total} (${Math.floor((progress.done / progress.total) * 100)}%)`
+    : String(progress.done);
+  return [count, progress.phase, progress.note].filter(Boolean).join(" · ");
+}
+
+/** Share of the work done, or null when the total is unknown. */
+export function progressShare(progress: Pick<Progress, "done" | "total">): number | null {
+  return progress.total ? Math.min(1, progress.done / progress.total) : null;
+}
+
+/** The last directory of a path, so rows name the project instead of the full path. */
+export function folderName(path: string): string {
+  return path.split("/").findLast(Boolean) ?? path;
+}
+
+/** Joins the non-empty parts as a ` · a · b` tail for a meta line. */
+export function metaTail(...parts: string[]): string {
+  return parts
+    .filter(Boolean)
+    .map((part) => ` · ${part}`)
+    .join("");
 }

@@ -205,21 +205,27 @@ export function startTask(
         await release();
         throw error;
       });
-    const agent = await workspace.agents.create({
-      config: AGENT_CONFIG,
-      title: taskTitle(kind, target.number),
-      prompt: taskPrompt(kind, target, extraPrompt),
-      labels: {
-        [LABEL.repo]: repo,
-        [LABEL.pr]: key,
-        [LABEL.kind]: kind,
-        [LABEL.head]: headOid,
-        [LABEL.trigger]: trigger,
-        [LABEL.workspace]: workspace.id,
-        [LABEL.base]: baseBranch,
-        [LABEL.root]: root,
-      },
-    });
+    const agent = await workspace.agents
+      .create({
+        config: AGENT_CONFIG,
+        title: taskTitle(kind, target.number),
+        prompt: taskPrompt(kind, target, extraPrompt),
+        labels: {
+          [LABEL.repo]: repo,
+          [LABEL.pr]: key,
+          [LABEL.kind]: kind,
+          [LABEL.head]: headOid,
+          [LABEL.trigger]: trigger,
+          [LABEL.workspace]: workspace.id,
+          [LABEL.base]: baseBranch,
+          [LABEL.root]: root,
+        },
+      })
+      .catch(async (error: unknown) => {
+        // No agent carries the base label yet, so nothing would release it later.
+        await release();
+        throw error;
+      });
     return { agentId: agent.id, workspaceId: workspace.id, reused: false };
   });
 }

@@ -29,7 +29,7 @@ interface FakeAgent {
 const sources: string[] = [];
 const archivedWorkspaces: string[] = [];
 
-function fakePaseo(agents: FakeAgent[], pageSize = 2) {
+function fakePaseo(agents: FakeAgent[], pageSize = 2, failCreate = false) {
   let created = 0;
   const api = {
     agents: {
@@ -80,6 +80,7 @@ function fakePaseo(agents: FakeAgent[], pageSize = 2) {
           agents: {
             async create({ labels }: { labels: Record<string, string> }) {
               await new Promise((resolve) => setTimeout(resolve, 10));
+              if (failCreate) throw new Error("quota");
               const id = `a${agents.length + 1}`;
               agents.push({
                 id,
@@ -179,6 +180,19 @@ describe("findTasks", () => {
       taskAgent(`a${index + 1}`, 7, { archived: true }, { "factory.head": head }),
     );
     expect(await startTask(fakePaseo(agents), "/repo", "ci", target, "", "auto")).toBeNull();
+  });
+});
+
+describe("failed start", () => {
+  it("releases the pinned base when the agent cannot start on a created workspace", async () => {
+    pins.length = 0;
+    unpins.length = 0;
+    sources.length = 0;
+    await expect(
+      startTask(fakePaseo([], 2, true), "/repo", "ci", target, "", "manual"),
+    ).rejects.toThrow("quota");
+    expect(sources).toHaveLength(1);
+    expect(unpins).toEqual([{ root: "/main", ref: sources[0] }]);
   });
 });
 

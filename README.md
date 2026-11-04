@@ -8,6 +8,7 @@ Two plugins for [Paseo](https://paseo.sh). Each one adds a panel to the right si
 | --------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `factory` | PR stack | Your open pull requests: merge order, stacks, CI, reviews and conflicts, with one-click fixes and agents that fix PRs for you |
 | `lab`     | Cluster  | Your Slurm jobs on a remote cluster: queue pipelines, progress, finished jobs and logs                                        |
+| `lab`     | Runs     | A left-sidebar screen of every agent that works or waits for you, with its subagents, progress and the cluster queue          |
 
 ## Install
 
@@ -23,7 +24,7 @@ Then turn on **Settings → Plugins → Enable plugins**, if it is not on alread
 - To install only one plugin, run only its half of the command.
 - To install from the app instead, paste `github:rk68/paseo-plugins:factory` or `github:rk68/paseo-plugins:lab` into **Settings → Plugins → Plugin source**.
 - To get new versions, run `paseo plugin update --all`. Plugins and their settings stay in place when the Paseo app updates.
-- Open a panel with Cmd+K: "Open PR stack" or "Open cluster jobs". You can also right-click the tab row of the right sidebar.
+- Open a panel with Cmd+K: "Open PR stack", "Open cluster jobs" or "Open runs". You can also right-click the tab row of the right sidebar.
 
 **Requirements**
 
@@ -92,6 +93,45 @@ Then turn on **Settings → Plugins → Enable plugins**, if it is not on alread
 </td>
   </tr>
 </table>
+
+## lab: Runs
+
+**Runs** in the left sidebar lists the agents on this host that work or need you, on all workspaces. It refreshes every 5 seconds.
+
+- **Agent tree.** An agent started by another agent shows under its parent.
+- **Status.** Agents that wait for permission or stopped with an error come first. Agents that finished a turn stay for 2 hours. Closed and idle agents are hidden.
+- **Current step.** A running agent shows its running tool call, such as the shell command.
+- **Subagents.** Claude Code subagents show under their agent, with their number of tool calls and the last one.
+- **Progress.** An agent, or a script that it starts, can report progress on countable work, such as data labelling. The row then shows a progress bar.
+- **Cluster.** When the cluster panel has an SSH host, the Slurm queue shows below the agents.
+- Tap an agent to open it.
+
+### Report progress
+
+Write a JSON file to `$PASEO_HOME/lab/progress/$PASEO_AGENT_ID/<name>.json`. Paseo sets both variables in the agent's environment, and a script that the agent starts inherits them.
+
+```json
+{
+  "task": "Label sentiment set",
+  "done": 340,
+  "total": 1000,
+  "phase": "labelling",
+  "note": "12 flagged"
+}
+```
+
+Only `done` is necessary. An unfinished entry keeps an idle agent in the list for 10 minutes after the last write, so a background script stays visible. From Python:
+
+```python
+import json, os, pathlib
+
+def report(name, done, **fields):  # fields: total, task, phase, note
+    folder = pathlib.Path(os.environ["PASEO_HOME"], "lab", "progress", os.environ["PASEO_AGENT_ID"])
+    folder.mkdir(parents=True, exist_ok=True)
+    tmp = folder / f".{name}.tmp"
+    tmp.write_text(json.dumps({"done": done, **fields}))
+    tmp.replace(folder / f"{name}.json")  # atomic, so the panel never reads half a file
+```
 
 ## Develop
 

@@ -21,6 +21,7 @@ import {
   finishedStatus,
   type JobStatus,
   limitUsed,
+  metaTail,
   queueTree,
   visibleQueue,
   timeAgo,
@@ -29,6 +30,7 @@ import {
 } from "../shared/format";
 import { mergeEdited } from "../shared/settings-draft";
 import { Spinner } from "./spinner";
+import { toneColor } from "./tone";
 
 type Theme = PluginWorkspacePanelProps["theme"];
 type Styles = ReturnType<typeof createStyles>;
@@ -46,6 +48,16 @@ const FINISHED_ICON: Record<Tone, string> = {
 };
 
 export function ClusterJobsPanel({ theme }: PluginWorkspacePanelProps) {
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  return (
+    <ScrollView style={styles.screen}>
+      <ClusterJobs theme={theme} />
+    </ScrollView>
+  );
+}
+
+/** The cluster queue and finished jobs, or the host form when no host is set. */
+export function ClusterJobs({ theme }: { theme: Theme }) {
   const settings = useSettings(clusterSettings);
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [editingHost, setEditingHost] = useState(false);
@@ -69,11 +81,7 @@ export function ClusterJobsPanel({ theme }: PluginWorkspacePanelProps) {
     );
   }
 
-  return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {body}
-    </ScrollView>
-  );
+  return <View style={styles.content}>{body}</View>;
 }
 
 function HostForm({ settings, onDone }: { settings: ReadySettings; onDone(): void }) {
@@ -445,13 +453,6 @@ function RunningDetail({ job, styles }: { job: QueuedJob; styles: Styles }) {
   );
 }
 
-function metaTail(...parts: string[]): string {
-  return parts
-    .filter(Boolean)
-    .map((part) => ` · ${part}`)
-    .join("");
-}
-
 function Meta({ status, detail, styles }: { status: JobStatus; detail: string; styles: Styles }) {
   return (
     <Text style={styles.meta} numberOfLines={1}>
@@ -612,16 +613,6 @@ function JobLog({
     );
   }
   return <View style={styles.details}>{body}</View>;
-}
-
-function toneColor(theme: Theme, tone: Tone): string {
-  const { colors } = theme;
-  return {
-    danger: colors.statusDanger,
-    warning: colors.statusWarning,
-    success: colors.statusSuccess,
-    muted: colors.foregroundMuted,
-  }[tone];
 }
 
 function createStyles(theme: Theme) {

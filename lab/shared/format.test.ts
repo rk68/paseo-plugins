@@ -3,7 +3,9 @@ import type { QueuedJob } from "./cluster";
 import {
   duration,
   finishedStatus,
+  progressText,
   queueTree,
+  runStatus,
   slurmSeconds,
   timeAgo,
   visibleQueue,
@@ -135,5 +137,30 @@ describe("queueTree", () => {
       [1, 0],
       [2, 0],
     ]);
+  });
+});
+
+describe("runStatus", () => {
+  it("puts a permission request before the running state", () => {
+    expect(runStatus({ status: "running", attention: "permission" }).label).toBe(
+      "Needs permission",
+    );
+  });
+
+  it("shows a finished turn only when the agent stopped", () => {
+    expect(runStatus({ status: "idle", attention: "finished" }).label).toBe("Finished");
+    expect(runStatus({ status: "running", attention: "finished" }).label).toBe("Running");
+  });
+});
+
+describe("progressText", () => {
+  it("shows the share when the total is known", () => {
+    expect(progressText({ done: 340, total: 1000, phase: "labelling" })).toBe(
+      "340 / 1000 (34%) · labelling",
+    );
+  });
+
+  it("shows only the count when the total is unknown", () => {
+    expect(progressText({ done: 12, note: "3 flagged" })).toBe("12 · 3 flagged");
   });
 });
