@@ -37,23 +37,31 @@ export async function listRuns(_input: unknown, { paseo }: PluginHandlerContext)
   };
 }
 
-async function listAgents(paseo: Paseo): Promise<AgentInput[]> {
-  const { entries } = await paseo.agents.list({
-    filter: { includeArchived: false },
-    sort: [{ key: "updated_at", direction: "desc" }],
-    page: { limit: AGENT_PAGE },
-  });
-  return entries.map(({ agent }) => ({
-    id: agent.id,
-    title: agent.title,
-    provider: agent.provider,
-    status: agent.status,
-    requiresAttention: agent.requiresAttention ?? false,
-    attentionReason: agent.attentionReason ?? null,
-    cwd: agent.cwd,
-    updatedAt: agent.updatedAt,
-    labels: agent.labels,
-  }));
+export async function listAgents(paseo: Paseo): Promise<AgentInput[]> {
+  const agents: AgentInput[] = [];
+  let cursor: string | undefined;
+  do {
+    const { entries, pageInfo } = await paseo.agents.list({
+      filter: { includeArchived: false },
+      sort: [{ key: "updated_at", direction: "desc" }],
+      page: { limit: AGENT_PAGE, ...(cursor ? { cursor } : {}) },
+    });
+    for (const { agent } of entries) {
+      agents.push({
+        id: agent.id,
+        title: agent.title,
+        provider: agent.provider,
+        status: agent.status,
+        requiresAttention: agent.requiresAttention ?? false,
+        attentionReason: agent.attentionReason ?? null,
+        cwd: agent.cwd,
+        updatedAt: agent.updatedAt,
+        labels: agent.labels,
+      });
+    }
+    cursor = pageInfo.hasMore ? (pageInfo.nextCursor ?? undefined) : undefined;
+  } while (cursor);
+  return agents;
 }
 
 async function timelineTail(paseo: Paseo, agentId: string): Promise<AgentTimelineItem[]> {

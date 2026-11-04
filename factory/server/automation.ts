@@ -56,8 +56,8 @@ function needs(kind: TaskKind, { pr, threads }: PrState, ignored: ReadonlySet<st
 }
 
 /**
- * The automatic tasks to start now, at most one per PR, most urgent kind first. A PR gets one
- * attempt per kind and head commit, and a bounded number of automatic attempts per kind.
+ * The automatic tasks to start now, at most one per PR. A PR takes its most urgent enabled task
+ * kind, and PRs go in number order, so each PR gets a slot before more than one of them starts.
  */
 export function nextTasks(
   states: PrState[],
@@ -139,6 +139,8 @@ export function createAutomation(
 ): AutomationRunner {
   let paseo: PaseoApi | null = null;
   let running = false;
+  let pending = false;
+  let stopped = false;
   const attempted = new Set<string>();
 
   async function runDirectory(
@@ -171,26 +173,40 @@ export function createAutomation(
   }
 
   async function tick() {
-    if (!paseo || running) return;
+    if (!paseo || stopped) return;
+    // A change that arrives mid-run needs one more pass, not a lost tick.
+    if (running) {
+      pending = true;
+      return;
+    }
     running = true;
     try {
-      const state = await settings.read();
-      if (state.status !== "ready") return;
-      const { automation, prompts, ignoredChecks } = state.values;
-      const ignored = new Set(ignoredChecks);
-      for (const [directory, enabled] of Object.entries(automation)) {
-        if (!TASK_KINDS.some((kind) => (enabled ?? NO_AUTOMATION)[kind])) continue;
-        // The UI keys automation by project root; a worktree key from an older version is inert.
-        if ((await mainCheckout(directory)) !== directory) {
-          log(`Automation ignores ${directory}: not a project's main checkout`);
-          continue;
-        }
-        await runDirectory(paseo, directory, enabled, prompts, ignored).catch((error: unknown) =>
-          log(`Automation skipped ${directory}: ${error instanceof Error ? error.message : error}`),
-        );
-      }
+      await reconcile();
     } finally {
       running = false;
+      if (pending && !stopped) {
+        pending = false;
+        void tick();
+      }
+    }
+  }
+
+  async function reconcile() {
+    if (!paseo) return;
+    const state = await settings.read();
+    if (state.status !== "ready") return;
+    const { automation, prompts, ignoredChecks } = state.values;
+    const ignored = new Set(ignoredChecks);
+    for (const [directory, enabled] of Object.entries(automation)) {
+      if (!TASK_KINDS.some((kind) => (enabled ?? NO_AUTOMATION)[kind])) continue;
+      // The UI keys automation by project root; a worktree key from an older version is inert.
+      if ((await mainCheckout(directory)) !== directory) {
+        log(`Automation ignores ${directory}: not a project's main checkout`);
+        continue;
+      }
+      await runDirectory(paseo, directory, enabled, prompts, ignored).catch((error: unknown) =>
+        log(`Automation skipped ${directory}: ${error instanceof Error ? error.message : error}`),
+      );
     }
   }
 
@@ -203,6 +219,8 @@ export function createAutomation(
       if (first) void tick();
     },
     stop() {
+      stopped = true;
+      pending = false;
       clearInterval(timer);
       unsubscribe();
     },

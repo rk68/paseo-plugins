@@ -85,13 +85,26 @@ export async function findGitStack(
   let warning: string | null = null;
   if (missing.length) {
     // Fetching into FETCH_HEAD only adds objects; no local branch or ref changes.
-    await git(
-      directory,
-      ["fetch", "--no-tags", "--quiet", remote, ...missing.map((pr) => `pull/${pr.number}/head`)],
-      60_000,
-    ).catch(() => {
-      warning = `Could not fetch ${missing.length} PR branch(es); their stacks may be missing.`;
-    });
+    try {
+      await git(
+        directory,
+        ["fetch", "--no-tags", "--quiet", remote, ...missing.map((pr) => `pull/${pr.number}/head`)],
+        60_000,
+      );
+    } catch {
+      // One unreachable head must not fail the others, so the refspecs retry on their own.
+      await Promise.all(
+        missing.map(async (pr) => {
+          await git(
+            directory,
+            ["fetch", "--no-tags", "--quiet", remote, `pull/${pr.number}/head`],
+            60_000,
+          ).catch(() => {
+            warning = `Could not fetch #${pr.number}; its stack may be missing.`;
+          });
+        }),
+      );
+    }
   }
 
   const commitSets = await mapLimit(prs, MAX_PARALLEL_GIT, (pr) =>

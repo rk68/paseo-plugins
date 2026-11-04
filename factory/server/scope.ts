@@ -18,7 +18,8 @@ export async function checkedOutBranch(
 ): Promise<CheckedOutBranch | null> {
   const name = (await git(directory, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim();
   if (!name || name === "HEAD" || name === trunk) return null;
-  const oid = (await git(directory, ["rev-parse", "HEAD"])).trim();
+  const oid = (await git(directory, ["rev-parse", "HEAD"]).catch(() => "")).trim();
+  if (!oid) return null;
   const commits = trunkOid ? await commitsNotOn(directory, "HEAD", trunkOid) : new Set<string>();
   return { name, oid, commits };
 }
