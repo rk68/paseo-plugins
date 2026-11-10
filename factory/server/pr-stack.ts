@@ -1,7 +1,7 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { RpcInput } from "@getpaseo/plugin";
 import type { Pr, PrStack, prStackRpc } from "../shared/pr-stack";
-import { gh, repoId, repoInfo } from "./gh";
+import { autoMergeAllowed, gh, repoId, repoInfo } from "./gh";
 import { findGitStack } from "./git-stack";
 import { reusableWorktree } from "./checkout";
 import { remoteFor } from "./remote";
@@ -27,6 +27,7 @@ const PR_FIELDS = [
   "mergeStateStatus",
   "reviewDecision",
   "statusCheckRollup",
+  "autoMergeRequest",
 ].join(",");
 
 export async function listOpenPrs(directory: string): Promise<GhPr[]> {
@@ -74,7 +75,7 @@ export async function listPrStack(
   const [repo, prs] = await Promise.all([repoInfo(directory), listOpenPrs(directory)]);
   const { trunk } = repo;
   const warnings: string[] = [];
-  const [{ parents, uniqueCommits, trunkOid, warning }, tasks, threads, worktrees] =
+  const [{ parents, uniqueCommits, trunkOid, warning }, tasks, threads, worktrees, autoMerge] =
     await Promise.all([
       remoteFor(directory, repo).then((remote) => findGitStack(directory, prs, trunk, remote)),
       findTasks(paseo, repoId(repo)),
@@ -85,6 +86,7 @@ export async function listPrStack(
         return new Map<number, number>();
       }),
       listWorktrees(directory).catch(() => new Map<string, string>()),
+      repo.canSquash ? autoMergeAllowed(directory, repo).catch(() => false) : false,
     ]);
   if (warning) warnings.push(warning);
   const branch = await checkedOutBranch(directory, trunk, trunkOid);
@@ -105,6 +107,7 @@ export async function listPrStack(
   for (const pr of shown) {
     pr.threads = threads.get(pr.number) ?? 0;
     pr.canSquash = repo.canSquash && pr.base === trunk && pr.builtOn === null;
+    pr.canAutoMerge = pr.canSquash && autoMerge;
     pr.worktree =
       reusableWorktree(worktrees, {
         number: pr.number,

@@ -52,6 +52,20 @@ export const squashMergeRpc = defineRpc({
   output: z.object({ message: z.string() }),
 });
 
+/** GitHub squash-merges the PR once its required checks and reviews pass, also after new pushes. */
+export const enableAutoMergeRpc = defineRpc({
+  name: "factory.pr.enable-auto-merge",
+  /** `headOid` is the head the user saw: a newer push makes the request fail instead. */
+  input: PrTargetSchema.extend({ headOid: z.string() }),
+  output: z.object({ message: z.string() }),
+});
+
+export const disableAutoMergeRpc = defineRpc({
+  name: "factory.pr.disable-auto-merge",
+  input: PrTargetSchema,
+  output: z.object({ message: z.string() }),
+});
+
 /** Moves a PR to trunk; the server reads trunk itself, so this cannot set any other base. */
 export const retargetToTrunkRpc = defineRpc({
   name: "factory.pr.retarget-to-trunk",

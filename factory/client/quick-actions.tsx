@@ -6,11 +6,14 @@ import { Pressable, Text, View } from "react-native";
 import {
   archiveTasksRpc,
   closePrRpc,
+  disableAutoMergeRpc,
+  enableAutoMergeRpc,
   markReadyRpc,
   openBranchRpc,
   retargetToTrunkRpc,
   squashMergeRpc,
   startTaskRpc,
+  TASK_KINDS,
   type TaskKind,
   updateBranchRpc,
 } from "../shared/actions";
@@ -28,6 +31,8 @@ const ACTION_ICON: Record<PrAction, string> = {
   comments: "MessageSquareText",
   ready: "GitPullRequest",
   merge: "GitMerge",
+  "auto-merge": "Clock",
+  "cancel-auto-merge": "X",
   checkout: "GitBranch",
   "open-agent": "Bot",
   "archive-task": "Archive",
@@ -41,13 +46,19 @@ const PENDING_LABEL: Record<PrAction, string> = {
   comments: "Starting...",
   ready: "Marking ready...",
   merge: "Merging...",
+  "auto-merge": "Turning on...",
+  "cancel-auto-merge": "Turning off...",
   checkout: "Opening...",
   "open-agent": "Opening...",
   "archive-task": "Archiving...",
 };
 const RECHECK_MS = 5_000;
 
-function actionLabel(action: PrAction, pr: Pr, confirmingMerge: boolean): string {
+function isTaskKind(action: RowAction): action is TaskKind {
+  return TASK_KINDS.some((kind) => kind === action);
+}
+
+function actionLabel(action: PrAction, pr: Pr, armed: RowAction | null): string {
   switch (action) {
     case "retarget":
       return `Change base to ${pr.retargetTo}`;
@@ -64,7 +75,11 @@ function actionLabel(action: PrAction, pr: Pr, confirmingMerge: boolean): string
     case "ready":
       return "Mark ready";
     case "merge":
-      return confirmingMerge ? "Confirm squash and merge" : "Squash and merge";
+      return armed === "merge" ? "Confirm squash and merge" : "Squash and merge";
+    case "auto-merge":
+      return armed === "auto-merge" ? "Confirm auto-merge" : "Auto-merge when green";
+    case "cancel-auto-merge":
+      return "Cancel auto-merge";
     case "checkout":
       return pr.worktree ? "Open worktree" : "Check out";
     case "open-agent":
@@ -119,6 +134,16 @@ export function useRowActions(pr: Pr) {
     mutationFn: () => squashMerge({ directory, number: pr.number, headOid: pr.headOid }),
     onSuccess: refresh,
   });
+  const enableAutoMerge = useRpc(enableAutoMergeRpc);
+  const autoMerge = useMutation({
+    mutationFn: () => enableAutoMerge({ directory, number: pr.number, headOid: pr.headOid }),
+    onSuccess: refresh,
+  });
+  const disableAutoMerge = useRpc(disableAutoMergeRpc);
+  const cancelAutoMerge = useMutation({
+    mutationFn: () => disableAutoMerge({ directory, number: pr.number }),
+    onSuccess: refresh,
+  });
   const closePr = useRpc(closePrRpc);
   const close = useMutation({
     mutationFn: () => closePr({ directory, number: pr.number }),
@@ -126,60 +151,37 @@ export function useRowActions(pr: Pr) {
   });
   const [armed, setArmed] = useArmed<RowAction>();
 
-  let pending: RowAction | null = null;
-  if (retarget.isPending) pending = "retarget";
-  else if (update.isPending) pending = "update";
-  else if (checkout.isPending) pending = "checkout";
-  else if (ready.isPending) pending = "ready";
-  else if (merge.isPending) pending = "merge";
-  else if (close.isPending) pending = "close";
-  else if (archive.isPending) pending = "archive-task";
-  else if (task.isPending) pending = task.variables ?? null;
+  const mutations: [
+    Exclude<RowAction, TaskKind | "open-agent">,
+    { isPending: boolean; error: Error | null; mutate(): void },
+  ][] = [
+    ["retarget", retarget],
+    ["update", update],
+    ["checkout", checkout],
+    ["ready", ready],
+    ["merge", merge],
+    ["auto-merge", autoMerge],
+    ["cancel-auto-merge", cancelAutoMerge],
+    ["close", close],
+    ["archive-task", archive],
+  ];
+  const pending: RowAction | null =
+    mutations.find(([, mutation]) => mutation.isPending)?.[0] ??
+    (task.isPending ? (task.variables ?? null) : null);
   const agentId = task.data?.agentId ?? pr.task?.agentId;
 
-  const run = useCallback(
-    (action: RowAction) => {
-      if (!rowActionEnabled(pending, action)) return;
-      const next = pressRowAction(armed, action);
-      setArmed(next.armed);
-      if (!next.fire) return;
-      if (action === "retarget") retarget.mutate();
-      else if (action === "update") update.mutate();
-      else if (action === "checkout") checkout.mutate();
-      else if (action === "ready") ready.mutate();
-      else if (action === "archive-task") archive.mutate();
-      else if (action === "merge") merge.mutate();
-      else if (action === "close") close.mutate();
-      else if (action === "open-agent") {
-        if (agentId) openAgent?.(agentId);
-      } else task.mutate(action);
-    },
-    [
-      pending,
-      armed,
-      setArmed,
-      retarget,
-      update,
-      task,
-      checkout,
-      ready,
-      archive,
-      merge,
-      close,
-      agentId,
-      openAgent,
-    ],
-  );
+  const run = (action: RowAction) => {
+    if (!rowActionEnabled(pending, action)) return;
+    const next = pressRowAction(armed, action);
+    setArmed(next.armed);
+    if (!next.fire) return;
+    if (action === "open-agent") {
+      if (agentId) openAgent?.(agentId);
+    } else if (isTaskKind(action)) task.mutate(action);
+    else mutations.find(([key]) => key === action)?.[1].mutate();
+  };
 
-  const error =
-    retarget.error ??
-    update.error ??
-    task.error ??
-    checkout.error ??
-    ready.error ??
-    merge.error ??
-    close.error ??
-    archive.error;
+  const error = task.error ?? mutations.find(([, mutation]) => mutation.error)?.[1].error ?? null;
   return { armed, pending, run, error, canOpenAgent: openAgent !== undefined };
 }
 
@@ -198,11 +200,7 @@ export function QuickActions({ pr, actions }: { pr: Pr; actions: RowActions }) {
           <ActionChip
             key={action}
             action={action}
-            label={
-              pending === action
-                ? PENDING_LABEL[action]
-                : actionLabel(action, pr, armed === "merge")
-            }
+            label={pending === action ? PENDING_LABEL[action] : actionLabel(action, pr, armed)}
             disabled={!rowActionEnabled(pending, action)}
             onRun={run}
           />

@@ -24,6 +24,7 @@ function state(number: number, extra: Partial<GhPr> = {}, threads = 0): PrState 
       mergeable: "MERGEABLE",
       mergeStateStatus: "CLEAN",
       reviewDecision: null,
+      autoMergeRequest: null,
       statusCheckRollup: [],
       ...extra,
     },

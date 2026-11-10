@@ -24,6 +24,10 @@ const PrSchema = z.object({
   depth: z.number(),
   /** The viewer may squash-merge this PR, and it targets trunk without being built on another PR. */
   canSquash: z.boolean(),
+  /** With `canSquash`: the repository also allows auto-merge. */
+  canAutoMerge: z.boolean(),
+  /** GitHub squash-merges this PR once its required checks and reviews pass. */
+  autoMerge: z.boolean(),
   /** Set on a PR whose base is another branch with no open PR of yours: the trunk to move it to. */
   retargetTo: z.string().nullable(),
   /** With `retargetTo`: the newest PR from the base branch, such as a parent that was merged. */

@@ -16,6 +16,8 @@ export type PrAction =
   | TaskKind
   | "ready"
   | "merge"
+  | "auto-merge"
+  | "cancel-auto-merge"
   | "checkout"
   | "open-agent"
   | "archive-task";
@@ -69,6 +71,12 @@ export function commentsLabel(count: number): string {
 
 /** What stands between this PR and a merge, most urgent first. Empty when nothing is known. */
 export function prSignals(pr: Pr): PrSignal[] {
+  const signals = blockingSignals(pr);
+  // Last, so it never hides "Blocked" or a "Ready to merge" that GitHub is about to act on.
+  return pr.autoMerge ? [...signals, { tone: "muted", label: "Auto-merge on" }] : signals;
+}
+
+function blockingSignals(pr: Pr): PrSignal[] {
   const task = activeTask(pr);
   const signals: PrSignal[] = [];
   if (task) signals.push({ tone: "warning", label: TASK_RUNNING_LABEL[task], busy: true });
@@ -119,7 +127,11 @@ export function prActions(pr: Pr): PrAction[] {
   if (pr.threads > 0 || pr.review === "changes_requested") actions.push("comments");
   if (pr.draft) actions.push("ready");
   // Only a row that reads "Ready to merge" offers it, so a merge never skips a visible warning.
-  if (pr.canSquash && prTone(pr) === "success") actions.push("merge");
+  const ready = prTone(pr) === "success";
+  if (pr.canSquash && ready) actions.push("merge");
+  // GitHub refuses auto-merge on a PR it could merge now, so a ready row offers the merge instead.
+  if (pr.autoMerge) actions.push("cancel-auto-merge");
+  else if (pr.canAutoMerge && !pr.draft && !ready) actions.push("auto-merge");
   actions.push("checkout");
   if (pr.task) actions.push("open-agent", "archive-task");
   return actions;

@@ -3,7 +3,7 @@ import type { PrAction } from "../shared/pr-signals";
 /** Every action a PR row runs. "close" sits in the PR details, the rest are chips. */
 export type RowAction = PrAction | "close";
 
-const CONFIRMED = new Set<RowAction>(["merge", "close"]);
+const CONFIRMED = new Set<RowAction>(["merge", "auto-merge", "close"]);
 
 /**
  * One press on a row. An action that cannot be undone fires only on a second press while it is

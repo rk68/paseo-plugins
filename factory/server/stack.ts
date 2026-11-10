@@ -24,6 +24,7 @@ export interface GhPr {
   mergeStateStatus: string;
   reviewDecision: string | null;
   statusCheckRollup: GhCheck[] | null;
+  autoMergeRequest: object | null;
 }
 
 const FAILED = new Set(["FAILURE", "ERROR", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"]);
@@ -152,6 +153,8 @@ export function buildPrGroups(
       merge: mergeStatus(pr),
       depth,
       canSquash: false,
+      canAutoMerge: false,
+      autoMerge: pr.autoMergeRequest !== null,
       retargetTo: depth === 0 && pr.baseRefName !== trunk ? trunk : null,
       basePr: null,
       builtOn: parent && parent.headRefName !== pr.baseRefName ? parent.number : null,
