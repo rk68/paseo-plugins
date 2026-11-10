@@ -19,6 +19,12 @@ describe("pressRowAction", () => {
     expect(presses(["close", "close"])).toEqual({ armed: null, fired: ["close"] });
   });
 
+  it("turns on auto-merge only on a second press", () => {
+    expect(presses(["auto-merge"])).toEqual({ armed: "auto-merge", fired: [] });
+    expect(presses(["auto-merge", "auto-merge"])).toEqual({ armed: null, fired: ["auto-merge"] });
+    expect(presses(["cancel-auto-merge"])).toEqual({ armed: null, fired: ["cancel-auto-merge"] });
+  });
+
   it("disarms the merge when the close is armed, so a confirmed close cannot also merge", () => {
     expect(presses(["merge", "close", "close"])).toEqual({ armed: null, fired: ["close"] });
     expect(presses(["merge", "close", "merge"])).toEqual({ armed: "merge", fired: [] });

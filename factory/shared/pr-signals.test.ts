@@ -18,6 +18,8 @@ function pr(extra: Partial<Pr> = {}): Pr {
     merge: "ready",
     depth: 0,
     canSquash: false,
+    canAutoMerge: false,
+    autoMerge: false,
     retargetTo: null,
     basePr: null,
     builtOn: null,
@@ -108,6 +110,19 @@ describe("prSignals", () => {
   });
 });
 
+describe("auto-merge signal", () => {
+  it("comes last, so it neither hides a block nor replaces ready to merge", () => {
+    expect(labels(pr({ autoMerge: true, merge: "blocked" }))).toEqual([
+      "muted:Blocked",
+      "muted:Auto-merge on",
+    ]);
+    expect(labels(pr({ autoMerge: true }))).toEqual([
+      "success:Ready to merge",
+      "muted:Auto-merge on",
+    ]);
+  });
+});
+
 describe("prActions", () => {
   it("offers one click for each problem a PR has", () => {
     expect(
@@ -130,6 +145,21 @@ describe("prActions", () => {
     expect(prActions(pr({ canSquash: false, ci: "pass" }))).toEqual(["checkout"]);
     expect(prActions(pr({ canSquash: true, merge: "blocked" }))).toEqual(["checkout"]);
     expect(prActions(pr({ canSquash: true, threads: 1 }))).toEqual(["comments", "checkout"]);
+  });
+
+  it("offers auto-merge to a PR that is not ready yet, and a cancel once it is on", () => {
+    const allowed = { canSquash: true, canAutoMerge: true };
+    expect(prActions(pr({ ...allowed, ci: "pending" }))).toEqual(["auto-merge", "checkout"]);
+    expect(prActions(pr({ ...allowed, ci: "pass" }))).toEqual(["merge", "checkout"]);
+    expect(prActions(pr({ ...allowed, draft: true, merge: "blocked" }))).toEqual([
+      "ready",
+      "checkout",
+    ]);
+    expect(prActions(pr({ canSquash: true, ci: "pending" }))).toEqual(["checkout"]);
+    expect(prActions(pr({ ...allowed, autoMerge: true, ci: "pending" }))).toEqual([
+      "cancel-auto-merge",
+      "checkout",
+    ]);
   });
 
   it("offers to move a PR to trunk unless its base is someone else's open PR", () => {

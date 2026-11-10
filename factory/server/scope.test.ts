@@ -17,6 +17,7 @@ function gh(number: number, head: string, base: string, headOid = `oid-${head}`)
     mergeable: "MERGEABLE",
     mergeStateStatus: "CLEAN",
     reviewDecision: null,
+    autoMergeRequest: null,
     statusCheckRollup: [],
   };
 }

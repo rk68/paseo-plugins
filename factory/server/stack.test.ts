@@ -23,6 +23,7 @@ function pr(number: number, head: string, base: string, extra: Partial<GhPr> = {
     mergeable: "MERGEABLE",
     mergeStateStatus: "CLEAN",
     reviewDecision: null,
+    autoMergeRequest: null,
     statusCheckRollup: [],
     ...extra,
   };

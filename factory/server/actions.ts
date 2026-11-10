@@ -3,6 +3,8 @@ import type { PluginHandlerContext, PluginSettings } from "@getpaseo/plugin/serv
 import type {
   archiveTasksRpc,
   closePrRpc,
+  disableAutoMergeRpc,
+  enableAutoMergeRpc,
   factorySettings,
   markReadyRpc,
   retargetToTrunkRpc,
@@ -49,6 +51,46 @@ export async function squashMerge({ directory, number, headOid }: RpcInput<typeo
     headOid,
   ]);
   return { message: output.trim() || `Merged #${number}` };
+}
+
+const ENABLE_AUTO_MERGE = `mutation($id: ID!, $head: GitObjectID!) {
+  enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: SQUASH, expectedHeadOid: $head }) {
+    clientMutationId
+  }
+}`;
+
+// Not `gh pr merge --auto`: gh merges at once when the PR is already mergeable, even with a
+// failing check that is not required. The API refuses that case, so nothing merges early.
+export async function enableAutoMerge({
+  directory,
+  number,
+  headOid,
+}: RpcInput<typeof enableAutoMergeRpc>) {
+  const [{ host }, id] = await Promise.all([
+    repoInfo(directory),
+    gh(directory, ["pr", "view", String(number), "--json", "id", "--jq", ".id"]),
+  ]);
+  await gh(directory, [
+    "api",
+    "graphql",
+    "--hostname",
+    host,
+    "-f",
+    `query=${ENABLE_AUTO_MERGE}`,
+    "-f",
+    `id=${id.trim()}`,
+    "-f",
+    `head=${headOid}`,
+  ]);
+  return { message: `Auto-merge on for #${number}` };
+}
+
+export async function disableAutoMerge({
+  directory,
+  number,
+}: RpcInput<typeof disableAutoMergeRpc>) {
+  const output = await gh(directory, ["pr", "merge", String(number), "--disable-auto"]);
+  return { message: output.trim() || `Auto-merge off for #${number}` };
 }
 
 export async function archiveTasksFromPanel(

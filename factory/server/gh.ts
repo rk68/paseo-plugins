@@ -83,3 +83,26 @@ export async function repoInfo(directory: string): Promise<RepoInfo> {
     canSquash: repo.squashMergeAllowed && WRITE_PERMISSIONS.has(repo.viewerPermission ?? ""),
   };
 }
+
+/** `gh repo view` cannot read this setting, so it takes a GraphQL call of its own. */
+export async function autoMergeAllowed(
+  directory: string,
+  repo: Pick<RepoInfo, "host" | "nameWithOwner">,
+): Promise<boolean> {
+  const [owner, name] = repo.nameWithOwner.split("/");
+  const output = await gh(directory, [
+    "api",
+    "graphql",
+    "--hostname",
+    repo.host,
+    "-f",
+    "query=query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { autoMergeAllowed } }",
+    "-f",
+    `owner=${owner}`,
+    "-f",
+    `name=${name}`,
+    "--jq",
+    ".data.repository.autoMergeAllowed",
+  ]);
+  return output.trim() === "true";
+}

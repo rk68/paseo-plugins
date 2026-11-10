@@ -62,6 +62,8 @@ Then turn on **Settings → Plugins → Enable plugins**, if it is not on alread
   | Address comments          | Starts an agent that fixes or answers each unresolved review thread, then resolves it        |
   | Mark ready                | Runs `gh pr ready` on a draft PR                                                             |
   | Squash and merge          | Runs `gh pr merge --squash` after a second press to confirm. It fails if the head changed    |
+  | Auto-merge when green     | Turns on GitHub auto-merge (squash) after a second press. GitHub merges when it can          |
+  | Cancel auto-merge         | Runs `gh pr merge --disable-auto`                                                            |
   | Archive agent             | Archives the PR's finished task agents and their worktree workspaces                         |
   | Check out / Open worktree | Opens the PR branch as a Paseo workspace, ready for your edits                               |
 
@@ -70,6 +72,10 @@ Then turn on **Settings → Plugins → Enable plugins**, if it is not on alread
   The PR details also have Close PR. It runs `gh pr close` after a second press to confirm, and keeps the branch, so PRs stacked on it offer Change base to main.
 
   Squash and merge shows only on a row that reads "Ready to merge", targets trunk directly, and only when the repository allows squash merges and you have write access.
+
+  Auto-merge when green shows on a PR that is not ready to merge yet, under the same conditions as Squash and merge. The repository must also allow auto-merge. GitHub then squash-merges the PR when its required checks pass, its required reviews are done and it has no conflicts. The PR stays on auto-merge when you or an agent push new commits. The row reads "Auto-merge on" until GitHub merges it.
+  - GitHub waits only for the checks that branch protection requires. A failing check that is not required does not stop the merge.
+  - GitHub does not update a branch that is behind its base. If branch protection requires an up-to-date branch, press Update branch.
 
   Agents run Claude Opus 5.5 in a new worktree that starts at the PR head. They never rebase, force-push, change the base or merge.
 
